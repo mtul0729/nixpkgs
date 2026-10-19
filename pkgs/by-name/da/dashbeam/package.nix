@@ -37,7 +37,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   # The Cargo workspace lives in src-tauri/; engine/ is a path dependency of it.
   cargoRoot = "src-tauri";
-  cargoLock.lockFile = "${finalAttrs.src}/src-tauri/Cargo.lock";
+  cargoHash = "sha256-7g4LlSm+/FOgE0awN9HQ8AtPCk+UnVghWqDIGpuBLGA=";
 
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
