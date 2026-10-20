@@ -8,6 +8,10 @@
   pkgs,
   tree-sitter-grammars,
   lockedGrammars ? lib.importJSON ./grammars.json,
+  # NB: the workarounds below are required by the grammar revs pinned in
+  # grammars.json (generated from helix's languages.toml), NOT by nixpkgs
+  # versions — removing them breaks the grammar build. Keep in sync when
+  # regenerating grammars.json.
   grammarsOverlay ? (
     final: prev: {
       tree-sitter-agda = prev.tree-sitter-agda.override {
@@ -25,6 +29,11 @@
       tree-sitter-janet-simple = prev.tree-sitter-janet-simple.override {
         excludeBrokenTreeSitterJson = false;
       };
+      tree-sitter-perl = prev.tree-sitter-perl.overrideAttrs {
+        # The pinned rev defines its own `bsearch`, which conflicts with the
+        # C23 bsearch in glibc >= 2.44 headers when gcc defaults to -std=gnu23.
+        NIX_CFLAGS_COMPILE = "-std=gnu17";
+      };
       tree-sitter-qmljs = prev.tree-sitter-qmljs.overrideAttrs {
         dontCheckForBrokenSymlinks = true;
       };
@@ -36,6 +45,11 @@
       };
       tree-sitter-tact = prev.tree-sitter-tact.override {
         excludeBrokenTreeSitterJson = false;
+      };
+      tree-sitter-tlaplus = prev.tree-sitter-tlaplus.overrideAttrs {
+        # nixpkgs' tree-sitter.json patch is already contained in the pinned
+        # rev, so applying it fails.
+        dontPatch = true;
       };
       tree-sitter-vue = prev.tree-sitter-vue.override {
         excludeBrokenTreeSitterJson = false;
@@ -111,7 +125,10 @@ let
     '') helixTreeSitterGrammars
   );
 
-  lockedGrammarsCount = lib.length (lib.attrNames lockedGrammars);
+  # Only grammars pinned in grammars.json that are also packaged in nixpkgs'
+  # tree-sitter-grammars collection are installed; helix master adds grammars
+  # that nixpkgs does not carry yet, and those are skipped by the filter above.
+  lockedGrammarsCount = lib.length (lib.attrNames helixTreeSitterGrammars);
 
   runtimeDir = runCommand "helix-runtime" { } ''
     mkdir -p $out
