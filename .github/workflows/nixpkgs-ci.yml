@@ -231,9 +231,12 @@ jobs:
 
             for pkg in $(jq -r '.[]' <<< "$updatable"); do
               old=$(nix-instantiate --eval --raw -A "$pkg.version")
-              # --build keeps a tag that does not compile out of the branch;
-              # --format normalises whatever nix-update rewrote.
-              if ! nix-update -u "$pkg" --build --format; then
+              # Update only. Building an unchanged package is the expensive part:
+              # a Rust package compiles and runs its tests even when the version
+              # did not move, which cost ~18 minutes for a single already-at
+              # package. Any real change is caught by the diff below, and only
+              # then is the package built.
+              if ! nix-update -u "$pkg" --format; then
                 echo "::warning::$b: $pkg 升级失败，分支保持原样"
                 git reset -q --hard "refs/remotes/fork/$b"
                 continue
@@ -242,8 +245,14 @@ jobs:
                 echo "$pkg: already at $old"
                 continue
               fi
+              # --build keeps a version that does not compile out of the branch.
+              if ! nix-build -A "$pkg" --no-out-link; then
+                echo "::warning::$b: $pkg 构建失败，分支保持原样"
+                git reset -q --hard "refs/remotes/fork/$b"
+                continue
+              fi
               new=$(nix-instantiate --eval --raw -A "$pkg.version")
-              git add -A pkgs/by-name
+              git add -A pkgs
               git commit -q -m "$pkg: $old -> $new"
               if git push "https://x-access-token:$TOKEN@github.com/$FORK.git" \
                 "HEAD:refs/heads/$b"; then
