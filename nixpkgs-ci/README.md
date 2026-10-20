@@ -39,6 +39,7 @@ packages. Adding a branch means editing that file; CI reads nothing else.
 | `pkg/helix` | humans + update bot | nixpkgs' own `helix` / `helix-unwrapped`, changed to track upstream master instead of the release tag |
 | `pkg/cosmic-desktop-mcp` | humans + update bot | MCP server for driving a COSMIC/Wayland desktop; the source stays in `mtul0729/cosmic-desktop-mcp` |
 | `pkg/activitywatch` | humans + update bot | aw-server-rust and aw-webui at 0.14.1, built in place with a custom update script; the Python components of the bundle stay at 0.13.2 |
+| `pkg/audacious` | humans | nixpkgs' own `audacious-bare` / `audacious-plugins` with `-Dgtk=true`, so the GTK UI is built next to Qt. No update script: upstream bumps the version, and the hourly rebase brings it in |
 
 Upstream `master` plays no part in this pipeline: branches are cut from `nixos-unstable` and
 every job is based on it. The one remaining reason to look at upstream `master` is when
