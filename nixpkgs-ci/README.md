@@ -6,7 +6,9 @@ something expected to disappear once a PR is merged.
 
 ## Shape
 
-`master` is always *upstream `nixos-unstable` + exactly one commit*. That commit holds only:
+`master` is always based on upstream `nixos-unstable` and holds only CI files and
+documentation — never package code. It may carry more than one commit; CI rebases the
+whole stack onto the current `nixos-unstable` every hour. It contains only:
 
 - `.github/workflows/nixpkgs-ci.yml` — the only enabled workflow; every upstream
   workflow has been disabled by hand
