@@ -37,6 +37,28 @@ after two wrong guesses.
 - Every upstream workflow is already `disabled_manually`. Do not re-enable any of them;
   `nixpkgs-ci` is the only one meant to run.
 
+## Working on master
+
+`master` exists to carry the CI workflow, `branches.txt` and this documentation. Nothing
+consumes its commits: `integration` is built from `nixos-unstable` plus the topic
+branches, and those branches do not descend from `master`.
+
+Change it by appending:
+
+```bash
+jj new master@origin -m "<what and why>"
+# edit
+jj git push -b master        # or: git push <sha>:refs/heads/master
+```
+
+That is a fast-forward; no `--force`, no rewriting of earlier commits. CI rebases the
+whole stack onto the current `nixos-unstable` once an hour, so if upstream moved under
+you the rebase happens there — or locally with `jj rebase -d upstream/nixos-unstable`.
+
+Do not squash the history into one commit, and do not amend published commits here. Each
+rule in this file and in `nixpkgs-ci/README.md` earned its own commit for a reason;
+collapsing them loses the why, and rewriting a remote commit means force-pushing, which
+has already cost us stale-lease failures and a lost morning.
 ## Branch hygiene
 
 Before pushing anything to a topic branch, check what the bot will think belongs to it:
