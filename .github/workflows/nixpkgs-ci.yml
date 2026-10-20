@@ -291,11 +291,28 @@ jobs:
           git config user.name "myul"
           git config user.email "hdx0729@gmail.com"
 
-          mapfile -t BRANCHES < <(
-            grep -v '^[[:space:]]*#' ../fork/nixpkgs-ci/branches.txt \
-              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
-              | grep -v '^$'
-          )
+          # One branch per line. A line may also name the packages the bot
+          # should look at: `activitywatch: aw-server-rust aw-webui`. A package
+          # outside pkgs/by-name cannot be found by diffing file paths, so a
+          # branch that carries one declares it here.
+          declare -A EXPLICIT=()
+          BRANCHES=()
+          while IFS= read -r line; do
+            case "$line" in
+              ''|'#'*) continue ;;
+            esac
+            b="${line%%:*}"
+            b="$(printf '%s' "$b" | sed 's/[[:space:]]*$//')"
+            [ -n "$b" ] || continue
+            BRANCHES+=("$b")
+            case "$line" in
+              *:*) EXPLICIT["$b"]="$(printf '%s' "${line#*:}" | tr ',' ' ')" ;;
+            esac
+          done < <(grep -v '^[[:space:]]*#' "$LIST" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          if [ ${#BRANCHES[@]} -eq 0 ]; then
+            echo "::error::$LIST 里一个分支都没有；是文件丢了还是格式不对？"
+            exit 1
+          fi
           echo "branches: ${BRANCHES[*]}"
 
           # 只取这些分支自己的对象，不碰 fork 的 nixpkgs 历史。
