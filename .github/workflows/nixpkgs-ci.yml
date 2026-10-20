@@ -1,0 +1,415 @@
+# 个人 CI，只存在于 fork 的 master 上。
+#
+# fork 首先是自维护包的地方，其次才是待提交 PR 的暂存区：nixpkgs-ci/branches.txt
+# 里的每个分支都是一组包，提不提 PR 都行，CI 一律按同样的方式处理。
+#
+# 三个 job，按依赖串起来：
+#
+#   1. update —— fork 自己的 bot。对 branches.txt 里每个分支，找出它新增的 by-name
+#      包里声明了 passthru.updateScript 的那些，跑 `nix-update -u`（nixpkgs 的标准
+#      升级入口，走 update.sh / maintainers/scripts/update.nix），构建通过后提交回
+#      该分支。nixpkgs 官方把这个 bot 跑在自己的服务器上（nixpkgs-update），这里用
+#      Actions 代替。没声明 updateScript 的包是手动 pin 的，bot 不碰。
+#
+#   2. integrate —— 生成 integration 分支 = NixOS/nixpkgs 的 master ＋ branches.txt
+#      里的分支依次 rebase 上去。sysadmin 引 github:mtul0729/nixpkgs/integration，
+#      系统里那份 nixpkgs 就带着我所有的包，rebase 交给 CI，不用手动维护。
+#
+#   3. review —— 对 integration 跑 nixpkgs-review。构建哪些包由它从 diff 里算，
+#      这里不写任何包名。整个构建包在 cachix watch-exec 里，产物直接进 mtul。
+#
+# 包分支不要求干净、不要求单提交：rebase 只重放它相对 upstream 的那几个提交，
+# 冲突的分支会被跳过并点名，不挡住其他包的缓存。
+#
+# 手动触发：
+#   gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs
+#   gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f only=dashbeam
+#   gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f skip_update=true
+#
+# fork 里的 schedule 默认是关的，第一次要去 Actions 页面点 "Enable workflow"，
+# 否则每小时那次不会发生（workflow_dispatch 不受影响）。
+name: nixpkgs-ci
+run-name: nixpkgs-ci (${{ inputs.only || 'integration' }})
+
+on:
+  schedule:
+    # 每小时 :13。上游 magpie 一天出好几个 tag，靠的就是这个频率；没有新版本时
+    # update job 只 fetch 两个 feed，不花构建时间。
+    - cron: "13 * * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "只跑这些分支（逗号分隔，可以是 integration 或某个 topic 分支）；留空 = 只跑 integration"
+        type: string
+      skip_update:
+        description: "跳过升级，只做集成与构建"
+        type: boolean
+        default: false
+  push:
+    branches: [master]
+    paths:
+      - nixpkgs-ci/**
+      - .github/workflows/nixpkgs-ci.yml
+
+permissions:
+  contents: write
+
+# One run at a time. Every run rebases this commit onto upstream master and
+# force-pushes both master and integration, so two concurrent runs race each
+# other: stale force-with-lease, integration overwritten by the older run, and
+# duplicated reviews building the same packages. Queue instead of cancelling --
+# a run that is already building is worth finishing.
+concurrency:
+  group: nixpkgs-ci
+  cancel-in-progress: false
+
+env:
+  FORK: mtul0729/nixpkgs
+  UPSTREAM: NixOS/nixpkgs
+  # Everything tracks nixos-unstable, not master: the consuming systems run
+  # unstable, so basing on the same commit the official cache was built from
+  # keeps derivations identical instead of duplicating them.
+  UPSTREAM_BRANCH: nixos-unstable
+  INTEGRATION: integration
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+      count: ${{ steps.plan.outputs.count }}
+      update: ${{ steps.plan.outputs.update }}
+    steps:
+      - id: plan
+        env:
+          ONLY: ${{ inputs.only }}
+          SKIP_UPDATE: ${{ inputs.skip_update }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ONLY:-}" ]; then
+            list=$(printf '%s' "$ONLY" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' || true)
+          else
+            list="$INTEGRATION"
+          fi
+          json=$(printf '%s\n' "$list" | jq -R . | jq -sc 'map(select(length > 0))')
+          echo "targets=$json" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq length <<< "$json")" >> "$GITHUB_OUTPUT"
+          echo "update=$([ "${SKIP_UPDATE:-false}" = "true" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+          jq -r '.[]' <<< "$json"
+
+  update:
+    needs: plan
+    if: needs.plan.outputs.update == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: fork
+          sparse-checkout: nixpkgs-ci
+          sparse-checkout-cone-mode: false
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: mtul
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # nix-update 做改写，nixfmt 是 --format 要用的；update.sh 自己的
+      # nix-shell shebang 也会拉一次，但外层这两个参数在它的进程外执行。
+      - name: Install nix-update and nixfmt
+        run: nix profile install nixpkgs#nix-update nixpkgs#nixfmt
+
+      - name: Upgrade whatever each branch declares as updatable
+        env:
+          # update.nix builds bashInteractive from <nixpkgs>, and a nix-shell
+          # shebang resolves <nixpkgs> before the script body runs; the runner
+          # has no NIX_PATH by default. Point it at the checkout made below.
+          NIX_PATH: nixpkgs=${{ github.workspace }}/nixpkgs
+          TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 绝对路径：这个 job 后面会 cd 进 nixpkgs，相对路径会指丢。
+          LIST="$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt"
+          mapfile -t BRANCHES < <(
+            grep -v '^[[:space:]]*#' "$LIST" \
+              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+              | grep -v '^$'
+          )
+          if [ ${#BRANCHES[@]} -eq 0 ]; then
+            echo "::error::$LIST 里一个分支都没有；是文件丢了还是格式不对？"
+            exit 1
+          fi
+          echo "branches: ${BRANCHES[*]}"
+
+          # nix-update evaluates the whole tree, so this is a full checkout.
+          # master keeps its commit graph (blobs are filtered out) because
+          # merge-base needs it; blobs are fetched lazily when checked out.
+          git init -q nixpkgs
+          cd nixpkgs
+          git remote add origin "https://github.com/$UPSTREAM"
+          git fetch -q --filter=blob:none --no-tags origin "$UPSTREAM_BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          refspecs=()
+          for b in "${BRANCHES[@]}"; do
+            refspecs+=("+refs/heads/$b:refs/remotes/fork/$b")
+          done
+          # No --depth: a depth-1 branch has no history, so merge-base would
+          # find no common ancestor. Branches are only a few commits anyway.
+          git fetch -q --no-tags "https://github.com/$FORK" "${refspecs[@]}"
+
+          for b in "${BRANCHES[@]}"; do
+            echo "::group::$b"
+            git checkout -q -B "bot-$b" "refs/remotes/fork/$b"
+
+            # The branch's own packages are the by-name packages it adds or
+            # modifies since it left upstream: a branch is a package (or a
+            # few), and editing an existing package counts just as much as
+            # adding one. Compare against the merge base, never the upstream tip
+            # directly: a topic branch does not follow upstream, so a
+            # two-point diff also counts every upstream change made since the
+            # branch's base (1942 packages in one measured case) and the bot
+            # would push unrelated commits onto the branch.
+            base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$b")
+            mapfile -t NEW < <(
+              git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$b" \
+                -- 'pkgs/by-name/*/*/package.nix' \
+                | awk -F/ '{print $4}' | sort -u
+            )
+            if [ ${#NEW[@]} -eq 0 ]; then
+              echo "no new packages on this branch"
+              git checkout -q --detach
+              echo "::endgroup::"
+              continue
+            fi
+
+            names=$(printf '%s\n' "${NEW[@]}" | jq -R . | jq -sc .)
+            # A package opts into automatic updates by declaring an
+            # updateScript. Everything else is pinned on purpose, so the bot
+            # leaves it alone.
+            updatable=$(nix-instantiate --eval --json --strict --expr "
+              let pkgs = import ./. { };
+              in builtins.filter
+                   (n: (builtins.tryEval (pkgs.\${n} ? updateScript)).value or false)
+                   (builtins.fromJSON ''$names'')")
+            echo "updatable: $updatable"
+
+            for pkg in $(jq -r '.[]' <<< "$updatable"); do
+              old=$(nix-instantiate --eval --raw -A "$pkg.version")
+              # --build keeps a tag that does not compile out of the branch;
+              # --format normalises whatever nix-update rewrote.
+              if ! nix-update -u "$pkg" --build --format; then
+                echo "::warning::$b: $pkg 升级失败，分支保持原样"
+                git reset -q --hard "refs/remotes/fork/$b"
+                continue
+              fi
+              if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+                echo "$pkg: already at $old"
+                continue
+              fi
+              new=$(nix-instantiate --eval --raw -A "$pkg.version")
+              git add -A pkgs/by-name
+              git commit -q -m "$pkg: $old -> $new"
+              if git push "https://x-access-token:$TOKEN@github.com/$FORK.git" \
+                "HEAD:refs/heads/$b"; then
+                echo "pushed $pkg: $old -> $new"
+              else
+                # Someone else touched the branch while we were building.
+                echo "::warning::$b: 推送 $pkg 失败（分支刚被改过），这次跳过"
+                git reset -q --hard "refs/remotes/fork/$b"
+              fi
+            done
+            git checkout -q --detach
+            echo "::endgroup::"
+          done
+
+  integrate:
+    needs: [plan, update]
+    if: always() && needs.plan.result == 'success' && (needs.update.result == 'success' || needs.update.result == 'skipped')
+    runs-on: ubuntu-24.04
+    steps:
+      # 只要 nixpkgs-ci/ 目录，不用把 fork 的整个 nixpkgs 历史拖下来。
+      - uses: actions/checkout@v5
+        with:
+          path: fork
+          sparse-checkout: nixpkgs-ci
+          sparse-checkout-cone-mode: false
+
+      # nixpkgs 的历史里绝大多数是 blob，而 rebase 只要 commit 和 tree；
+      # blob:none 让这一步从十几分钟降到一两分钟，检出时再按需拉当前树。
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ env.UPSTREAM }}
+          path: nixpkgs
+          fetch-depth: 0
+          filter: blob:none
+
+      # GITHUB_TOKEN 推不了：integration 分支第一次出现时，整棵 nixpkgs 树都算
+      # "新增的 workflow 文件"，需要 workflow 权限。PUSH_TOKEN 是有 workflow
+      # scope 的 PAT。
+      - name: Rebase pending branches onto upstream master
+        env:
+          TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd nixpkgs
+          git config user.name "myul"
+          git config user.email "hdx0729@gmail.com"
+
+          mapfile -t BRANCHES < <(
+            grep -v '^[[:space:]]*#' ../fork/nixpkgs-ci/branches.txt \
+              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+              | grep -v '^$'
+          )
+          echo "branches: ${BRANCHES[*]}"
+
+          # 只取这些分支自己的对象，不碰 fork 的 nixpkgs 历史。
+          refspecs=()
+          for b in "${BRANCHES[@]}"; do
+            refspecs+=("+refs/heads/$b:refs/remotes/fork/$b")
+          done
+          git fetch --no-tags "https://github.com/$FORK" "${refspecs[@]}"
+
+          git fetch -q --no-tags origin "$UPSTREAM_BRANCH"
+          git checkout -B "$INTEGRATION" "origin/$UPSTREAM_BRANCH"
+          failed=()
+          for b in "${BRANCHES[@]}"; do
+            echo "::group::$b"
+            # 只重放这个分支相对 upstream 的提交。从 fork master 拉出来的分支会
+            # 带一个 CI 提交，merge-base 把它排除在外；分支有几个提交都无所谓。
+            base=$(git merge-base "$INTEGRATION" "refs/remotes/fork/$b")
+            git checkout -B "pending-$b" "refs/remotes/fork/$b"
+            if git rebase --onto "$INTEGRATION" "$base"; then
+              git checkout "$INTEGRATION"
+              git merge --ff-only "pending-$b"
+            else
+              git rebase --abort || true
+              git checkout "$INTEGRATION"
+              failed+=("$b")
+              echo "::error::$b 与 upstream master 冲突，这次先跳过它"
+            fi
+            echo "::endgroup::"
+          done
+
+          git log --oneline "origin/$UPSTREAM_BRANCH..HEAD"
+          git push --force "https://x-access-token:$TOKEN@github.com/$FORK.git" \
+            "HEAD:refs/heads/$INTEGRATION"
+
+          # 有分支没合进来时 job 要红，但 integration 已经推出去了：其余包照常
+          # 有缓存，不会因为一个包卡住整条链。
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "::error::以下分支没能 rebase，integration 里暂时没有它们：${failed[*]}"
+            exit 1
+          fi
+
+      # master 只是 CI 文件的容器，但让它保持「upstream master + CI 提交」这个
+      # 形状：否则它会悄悄落后几千个提交，分支列表看着像死仓库，从它起的分支
+      # 也带着很老的 base。这里已经有完整的 upstream 历史，顺手做掉。
+      - name: Rebase the CI commit onto upstream master
+        env:
+          TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd nixpkgs
+          git fetch --no-tags "https://github.com/$FORK" \
+            "+refs/heads/master:refs/remotes/fork/master"
+          old=$(git rev-parse refs/remotes/fork/master)
+          git checkout -q -B fork-master "$old"
+
+          if ! git rebase "origin/$UPSTREAM_BRANCH"; then
+            git rebase --abort
+            echo "::error::fork master 上的提交没法 rebase 到 upstream master，需要手工处理"
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" = "$old" ]; then
+            echo "master 已经是最新的 upstream + CI 提交"
+            exit 0
+          fi
+
+          # 这次推送是 CI 自己制造的（只是把 CI 提交挪到新 master 上），别让它
+          # 再触发一整轮构建。两个 -m 之间 git 会插一个空行。
+          # 旧 message 里已经有上一轮留下的 [skip ci]，先剥掉再加，否则每小时
+          # rebase 一次就多一行。
+          git commit -q --amend -m "$(git log -1 --format=%B | sed '/^\[skip ci\]$/d')" -m "[skip ci]"
+          git push --force-with-lease="refs/heads/master:$old" \
+            "https://x-access-token:$TOKEN@github.com/$FORK.git" "HEAD:refs/heads/master"
+
+  review:
+    needs: [plan, integrate]
+    if: needs.plan.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.targets) }}
+        system: [x86_64-linux, aarch64-linux]
+    # aarch64 用 GitHub 的 arm runner，比在 x86_64 上交叉快得多。
+    runs-on: ${{ matrix.system == 'aarch64-linux' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 300
+    steps:
+      # nixpkgs 全历史 + eval + 编译，默认那点空间不够。
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
+      # nixpkgs-review 要 merge-base，浅克隆不行。
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ env.UPSTREAM }}
+          fetch-depth: 0
+          filter: blob:none
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: mtul
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Fetch ${{ matrix.target }}
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags "https://github.com/$FORK" \
+            "+refs/heads/${TARGET}:refs/remotes/fork/${TARGET}"
+          sha=$(git rev-parse "refs/remotes/fork/${TARGET}")
+          echo "sha=$sha" >> "$GITHUB_ENV"
+          echo "reviewing \`${TARGET}\` at \`$sha\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install nixpkgs-review
+        run: nix profile install nixpkgs#nixpkgs-review
+
+      # 不传包名：nixpkgs-review 自己对比 diff 算出要构建什么。
+      # watch-exec 把这次运行里新出现的 store path 全部推给 mtul。
+      - name: Review and cache
+        env:
+          TARGET: ${{ matrix.target }}
+          SYSTEM: ${{ matrix.system }}
+        run: |
+          set -euo pipefail
+          cachix watch-exec mtul -- nixpkgs-review rev "$sha" -b "$UPSTREAM_BRANCH" --no-shell --system "$SYSTEM"
