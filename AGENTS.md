@@ -190,9 +190,11 @@ mean the branch-base rule above was violated — stop and fix the branch. `updat
 pushes to `ci/<branch>`; the branch itself moves in `verify`, and a `verify` leg that
 failed leaves it untouched. In `verify` the package must appear under
 `this derivation will be built:`; a package missing from that list is a silent eval
-failure, not a success. `integrate` then builds the attributes the branches name, so a
-package that is only ever substituted will not show up there either. A green run does not
-prove substitutability: compare the store path's `.narinfo` on `mtul.cachix.org`.
+failure, not a success. `integrate` only does git; the safety net is
+`review-integration`, which runs after `integration` is pushed and therefore cannot block
+anything — a red run there means the merged tree (or upstream) broke a package. A green
+run does not prove substitutability: compare the store path's `.narinfo` on
+`mtul.cachix.org`.
 
 ## About this file
 

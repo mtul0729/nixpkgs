@@ -15,9 +15,11 @@
 #      保持原样。所以包分支上不会出现没验证过的提交，也就不需要回滚。
 #
 #   3. integrate —— 生成 integration 分支 = NixOS/nixpkgs 的 nixos-unstable ＋
-#      branches.txt 里的分支依次 rebase 上去，然后把这些分支声明的属性构建一遍。
-#      逐包验证已经在 verify 做过，这里只确认合起来还能 eval、还能构建；命中
-#      cache 时这一步只是下载。
+#      branches.txt 里的分支依次 rebase 上去。只做 git，不构建。
+#
+#   4. review-integration —— 对 integration 跑一次完整的 nixpkgs-review 兜底。
+#      它在 integration 推出去之后才跑，所以失败不会挡住任何分支更新或 integration
+#      本身，只负责把"合起来之后坏掉的包"暴露出来。
 #
 # 包分支不要求干净、不要求单提交：rebase 只重放它相对 upstream 的那几个提交，
 # 冲突的分支会被跳过并点名，不挡住其他包的缓存。
@@ -40,7 +42,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "只跑这些分支（逗号分隔）；留空 = branches.txt 里的全部。手动点名某个分支时，即使没有 bot 候选也会审一次它的当前顶端"
+        description: "只跑这些分支（逗号分隔）；留空 = branches.txt 里的全部"
         type: string
       skip_update:
         description: "跳过升级，只做集成与构建"
@@ -275,16 +277,6 @@ jobs:
             "+refs/heads/$UPSTREAM_BRANCH:refs/remotes/origin/$UPSTREAM_BRANCH"
           git -C nixpkgs checkout -q -f -B "$UPSTREAM_BRANCH" "origin/$UPSTREAM_BRANCH"
 
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - uses: cachix/cachix-action@v17
-        with:
-          name: mtul
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
       # GITHUB_TOKEN 推不了：integration 分支第一次出现时，整棵 nixpkgs 树都算
       # "新增的 workflow 文件"，需要 workflow 权限。PUSH_TOKEN 是有 workflow
       # scope 的 PAT。
@@ -332,7 +324,6 @@ jobs:
           git fetch -q --no-tags origin "$UPSTREAM_BRANCH"
           git checkout -B "$INTEGRATION" "origin/$UPSTREAM_BRANCH"
           failed=()
-          merged=()
           for b in "${BRANCHES[@]}"; do
             echo "::group::$b"
             # 只重放这个分支相对 upstream 的提交。从 fork master 拉出来的分支会
@@ -342,7 +333,6 @@ jobs:
             if git rebase --onto "$INTEGRATION" "$base"; then
               git checkout "$INTEGRATION"
               git merge --ff-only "pending-$b"
-              merged+=("$b")
             else
               git rebase --abort || true
               git checkout "$INTEGRATION"
@@ -355,21 +345,6 @@ jobs:
           git log --oneline "origin/$UPSTREAM_BRANCH..HEAD"
           git push --force "https://x-access-token:$TOKEN@github.com/$FORK.git" \
             "HEAD:refs/heads/$INTEGRATION"
-
-          # 合进来的分支各自声明了哪些属性：显式列表优先，否则按 by-name 目录名。
-          : > "$RUNNER_TEMP/attrs.txt"
-          for b in "${merged[@]}"; do
-            if [ -n "${EXPLICIT[$b]:-}" ]; then
-              printf '%s\n' ${EXPLICIT[$b]} >> "$RUNNER_TEMP/attrs.txt"
-            else
-              base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$b")
-              git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$b" \
-                -- 'pkgs/by-name/*/*/package.nix' | awk -F/ '{print $4}' \
-                >> "$RUNNER_TEMP/attrs.txt"
-            fi
-          done
-          sort -u "$RUNNER_TEMP/attrs.txt" -o "$RUNNER_TEMP/attrs.txt"
-          echo "will build: $(tr '\n' ' ' < "$RUNNER_TEMP/attrs.txt")"
 
           # 有分支没合进来时 job 要红，但 integration 已经推出去了：其余包照常
           # 有缓存，不会因为一个包卡住整条链。
@@ -411,23 +386,6 @@ jobs:
             "https://x-access-token:$TOKEN@github.com/$FORK.git" "HEAD:refs/heads/master"
 
 
-      # 逐包验证在 verify 做过；这里只确认合起来的树还能 eval、还能构建。
-      # 命中 cache 时是下载，只有 drv 真变了（上游动了依赖）才会编译 —— 那种
-      # 情况本来就该让这轮变红。
-      - name: Build what the branches carry
-        run: |
-          set -euo pipefail
-          cd nixpkgs
-          mapfile -t attrs < "$RUNNER_TEMP/attrs.txt"
-          if [ ${#attrs[@]} -eq 0 ]; then
-            echo "no attributes to build"
-            exit 0
-          fi
-          args=()
-          for a in "${attrs[@]}"; do args+=(-A "$a"); done
-          echo "building: ${attrs[*]}"
-          cachix watch-exec mtul -- nix-build "${args[@]}" --no-out-link
-
   verify:
     needs: [plan, update]
     if: always() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' && needs.plan.outputs.update == 'true'
@@ -443,30 +401,19 @@ jobs:
         id: cand
         env:
           BRANCH: ${{ matrix.branch }}
-          ONLY: ${{ inputs.only }}
         run: |
           set -euo pipefail
+          # 没有候选说明这个分支这一轮没被更新；它的顶端是上一次 verify 通过
+          # 之后留下的，不在这里重复审。要单独确认某个分支，用 nixpkgs-branch。
           sha=$(git ls-remote "https://github.com/$FORK" "refs/heads/ci/$BRANCH" | cut -f1)
-          publish=true
           if [ -z "$sha" ]; then
-            # 手动 only=<branch> 时，没有候选也审一次分支顶端：改完包想立刻拿
-            # 反馈就走这条，不用等 bot 产出候选。
-            case ",${ONLY:-}," in
-              *",$BRANCH,"*)
-                sha=$(git ls-remote "https://github.com/$FORK" "refs/heads/$BRANCH" | cut -f1)
-                publish=false
-                ;;
-              *)
-                echo "$BRANCH: 没有候选，跳过"
-                echo "has=false" >> "$GITHUB_OUTPUT"
-                exit 0
-                ;;
-            esac
+            echo "$BRANCH: 没有候选，跳过"
+            echo "has=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          echo "$BRANCH: 审 $sha（publish=$publish）"
+          echo "$BRANCH: 候选 $sha"
           echo "has=true" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
 
       - name: Free disk space
         if: steps.cand.outputs.has == 'true'
@@ -501,12 +448,8 @@ jobs:
           git -C nixpkgs fetch -q --filter=blob:none --no-tags origin \
             "+refs/heads/$UPSTREAM_BRANCH:refs/remotes/origin/$UPSTREAM_BRANCH"
           git -C nixpkgs fetch -q --no-tags "https://github.com/$FORK" \
+            "+refs/heads/ci/$BRANCH:refs/remotes/candidate/$BRANCH" \
             "+refs/heads/$BRANCH:refs/remotes/fork/$BRANCH"
-          # 手动审分支顶端时没有候选引用，别让 fetch 因此失败。
-          if git ls-remote --exit-code "https://github.com/$FORK" "refs/heads/ci/$BRANCH" >/dev/null; then
-            git -C nixpkgs fetch -q --no-tags "https://github.com/$FORK" \
-              "+refs/heads/ci/$BRANCH:refs/remotes/candidate/$BRANCH"
-          fi
           git -C nixpkgs checkout -q -f -B "$UPSTREAM_BRANCH" "origin/$UPSTREAM_BRANCH"
 
       - uses: cachix/install-nix-action@v31
@@ -531,7 +474,6 @@ jobs:
         env:
           BRANCH: ${{ matrix.branch }}
           SHA: ${{ steps.cand.outputs.sha }}
-          PUBLISH: ${{ steps.cand.outputs.publish }}
           TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
         working-directory: nixpkgs
         run: |
@@ -539,14 +481,71 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           cachix watch-exec mtul -- nixpkgs-review rev "$SHA" -b "$UPSTREAM_BRANCH" --no-shell --system x86_64-linux
-          if [ "$PUBLISH" = "true" ]; then
-            # 候选是包分支的线性后代，merge-base 就是候选创建时的分支顶端；
-            # 拿它当 lease，期间有人推过分支就不会覆盖。
-            old=$(git merge-base "refs/remotes/fork/$BRANCH" "refs/remotes/candidate/$BRANCH")
-            git push --force-with-lease="refs/heads/$BRANCH:$old" \
-              "https://x-access-token:$TOKEN@github.com/$FORK.git" "$SHA:refs/heads/$BRANCH"
-            git push "https://x-access-token:$TOKEN@github.com/$FORK.git" --delete "refs/heads/ci/$BRANCH" || true
-            echo "published $BRANCH -> $SHA"
-          else
-            echo "$BRANCH 已经是 $SHA，只审不推"
-          fi
+          # 候选是包分支的线性后代，merge-base 就是候选创建时的分支顶端；
+          # 拿它当 lease，期间有人推过分支就不会覆盖。
+          old=$(git merge-base "refs/remotes/fork/$BRANCH" "refs/remotes/candidate/$BRANCH")
+          git push --force-with-lease="refs/heads/$BRANCH:$old" \
+            "https://x-access-token:$TOKEN@github.com/$FORK.git" "$SHA:refs/heads/$BRANCH"
+          git push "https://x-access-token:$TOKEN@github.com/$FORK.git" --delete "refs/heads/ci/$BRANCH" || true
+          echo "published $BRANCH -> $SHA"
+
+  # 兜底：分支各自 verify 过，但"合起来"没人看过。这一步在 integration 已经
+  # 推出去之后才跑，所以它失败不会挡住任何分支更新或 integration 本身，只是
+  # 把合起来之后坏掉的包暴露出来。每小时跑一次，x86_64 一台。
+  review-integration:
+    needs: [plan, integrate]
+    if: always() && needs.integrate.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
+      - name: Restore the nixpkgs git cache
+        uses: actions/cache@v6
+        with:
+          path: nixpkgs/.git
+          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-${{ strategy.job-index }}
+          restore-keys: |
+            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
+
+      - name: Fetch upstream and integration
+        run: |
+          set -euo pipefail
+          mkdir -p nixpkgs
+          git -C nixpkgs rev-parse --git-dir >/dev/null 2>&1 || git -C nixpkgs init -q
+          git -C nixpkgs remote add origin "https://github.com/$UPSTREAM" 2>/dev/null \
+            || git -C nixpkgs remote set-url origin "https://github.com/$UPSTREAM"
+          git -C nixpkgs fetch -q --filter=blob:none --no-tags origin \
+            "+refs/heads/$UPSTREAM_BRANCH:refs/remotes/origin/$UPSTREAM_BRANCH"
+          git -C nixpkgs fetch -q --no-tags "https://github.com/$FORK" \
+            "+refs/heads/$INTEGRATION:refs/remotes/fork/$INTEGRATION"
+          git -C nixpkgs checkout -q -f -B "$UPSTREAM_BRANCH" "origin/$UPSTREAM_BRANCH"
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: mtul
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Install nixpkgs-review
+        run: nix profile install nixpkgs#nixpkgs-review
+
+      - name: Review integration
+        working-directory: nixpkgs
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse "refs/remotes/fork/$INTEGRATION")
+          echo "integration $sha" >> "$GITHUB_STEP_SUMMARY"
+          cachix watch-exec mtul -- nixpkgs-review rev "$sha" -b "$UPSTREAM_BRANCH" --no-shell --system x86_64-linux
