@@ -145,7 +145,7 @@ a script can find it is a red flag for a reviewer and for future you.
 Order of preference:
 
 1. **Declare the attribute.** A `branches.txt` line may name its packages, e.g.
-   `activitywatch: aw-server-rust aw-webui`. That is all a package outside `pkgs/by-name/`
+   `pkg/activitywatch: aw-server-rust`. That is all a package outside `pkgs/by-name/`
    needs in order to be seen.
 2. **Write an update script.** `passthru.updateScript = ./update.sh` is the documented
    mechanism for "the default heuristics cannot edit this correctly" (see
