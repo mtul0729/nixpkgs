@@ -11,4 +11,4 @@ dashbeam
 magpie
 helix
 cosmic-desktop-mcp
-activitywatch
+activitywatch: aw-server-rust
