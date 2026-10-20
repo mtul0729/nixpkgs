@@ -16,7 +16,9 @@ case "$PACKAGE" in
     # grammars.json, is fully determined by the pinned rev. When upstream master
     # has not moved, the expensive part — nurl prefetching every grammar and a
     # full rebuild — would run for nothing, so compare revs first and bail out.
-    current_rev="$(nix eval --raw --file . helix-unwrapped.passthru.rev 2>/dev/null || true)"
+    # Read the pin straight out of the expression: evaluating it would mean a full
+    # nixpkgs evaluation (~4 minutes) just to answer "did anything move?".
+    current_rev="$(grep -oE 'rev = "[0-9a-f]{40}"' "$SCRIPT_DIR/../helix-unwrapped/package.nix" | head -1 | cut -d'"' -f2 || true)"
     upstream_rev="$(timeout 60 git ls-remote https://github.com/helix-editor/helix refs/heads/master 2>/dev/null | cut -f1 || true)"
     if [ -n "$current_rev" ] && [ -n "$upstream_rev" ] && [ "$current_rev" = "$upstream_rev" ]; then
       echo "helix already pinned to master $current_rev; nothing to update"
