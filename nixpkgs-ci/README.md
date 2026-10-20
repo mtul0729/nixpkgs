@@ -46,21 +46,25 @@ preparing a pull request against nixpkgs, to check whether a change already land
 
 ## CI
 
-## CI
-
 | job | what it does |
 | --- | --- |
-| `plan` | resolves the target list from the `only` input (default: `integration`) |
-| `update` | the bot, see below |
-| `integrate` | rebases every branch in `branches.txt` onto current upstream `nixos-unstable`, force-pushes `integration`, then rebases this CI commit onto upstream `nixos-unstable` |
-| `review` | `nixpkgs-review rev <integration sha> --no-shell` on x86_64 and aarch64, wrapped in `cachix watch-exec mtul` so everything it builds is pushed |
+| `plan` | reads `branches.txt`, narrowed by the `only` input |
+| `update` | the bot, see below; its commits go to `ci/<branch>`, never straight to the branch |
+| `verify` | `nixpkgs-review rev <candidate>` for that one branch; on success fast-forwards the branch and deletes the candidate, on failure drops the candidate |
+| `integrate` | rebases every branch in `branches.txt` onto current upstream `nixos-unstable`, force-pushes `integration`, builds the attributes those branches carry, then rebases this CI commit onto upstream `nixos-unstable` |
+
+A package branch only ever moves through a review that passed, so there is nothing to roll
+back. `integrate` then rebuilds what the branches carry: cheap when the cache has it, red
+when upstream moved a dependency underneath a package. There is no full review of
+`integration` any more — each branch is reviewed on its own, so one broken package no
+longer hides the other four.
 
 Triggers: hourly at `:13` (the bot is the only reason this fork needs a schedule),
 pushes to `master` that touch `nixpkgs-ci/**` or the workflow file, and
 `workflow_dispatch` with `only` / `skip_update`.
 
 ```bash
-gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs                    # integration only
+gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs                    # every branch
 gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f only=pkg/helix      # one branch
 gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f skip_update=true
 ```
@@ -78,8 +82,12 @@ passthru.updateScript = nix-update-script {
 };
 ```
 
-Then `nix-update -u <pkg> --build --format` runs, and the branch is only pushed when
-the build passes. A pinned package is simply one without that attribute.
+Then `nix-update -u <pkg> --format` runs and the result is committed to `ci/<branch>`.
+Nothing is built there: `verify` reviews that candidate, and only a passing review
+fast-forwards it onto the branch. A pinned package is simply one without the attribute.
+
+`only=<branch>` on a manual run also reviews the branch's current tip when the bot has
+no candidate — that is the fast path after fixing something by hand.
 
 ## Adding a package
 
@@ -97,7 +105,23 @@ the build passes. A pinned package is simply one without that attribute.
 
 5. Add the branch name to `nixpkgs-ci/branches.txt` on `master`.
 6. `gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f only=<branch>`, then confirm the
-   package appears in the `review` build list and in the cache (see below).
+   package appears in the `verify` build list and in the cache (see below).
+
+### Fixing a failing package
+
+A failed `verify` leaves the branch exactly as it was: the candidate is dropped, nothing
+is rolled back. To iterate:
+
+1. `jj workspace add ../fix-<name> -r 'pkg/<name>@origin'`
+2. reproduce with `nix-build . -A <attr> --no-out-link` — same base as CI, so a local
+   success is the derivation the runner would build
+3. fix, then run the checks from *Adding a package* above plus `nixfmt`
+4. push the branch
+5. `gh workflow run nixpkgs-ci.yml -f only=pkg/<name>` reviews that branch's new tip
+   (~8 minutes: one update leg, one verify leg, no integration review)
+
+Do not make a failing check pass by turning it off (`doCheck = false`, `--impure`, a local
+override). If a package cannot build, leave the branch alone and say so.
 
 ## Why import-from-derivation is not allowed
 
@@ -122,7 +146,7 @@ in a real fixed-output derivation.
 
 ## Checking the cache
 
-A green `review` run does not by itself mean a path is substitutable — a different
+A green `verify` run does not by itself mean a path is substitutable — a different
 nixpkgs baseline produces a different derivation for the same package version. Ask the
 cache directly:
 
