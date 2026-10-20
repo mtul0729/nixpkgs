@@ -242,6 +242,7 @@ rec {
       export HOME="$TMPDIR"
     '';
 
+    passthru.updateScript = ./update.sh;
 
     meta = {
       description = "High-performance implementation of the ActivityWatch server, written in Rust";
