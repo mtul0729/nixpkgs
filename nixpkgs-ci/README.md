@@ -10,8 +10,8 @@ something expected to disappear once a PR is merged.
 documentation — never package code. It may carry more than one commit; CI rebases the
 whole stack onto the current `nixos-unstable` every hour. It contains only:
 
-- `.github/workflows/nixpkgs-ci.yml` — the only enabled workflow; every upstream
-  workflow has been disabled by hand
+- `.github/workflows/{ci-check,update,integrate}.yml` — the only enabled workflows;
+  every upstream workflow has been disabled by hand
 - `nixpkgs-ci/` — the branch list and this document
 
 Every package lives on its own topic branch, cut from upstream `nixos-unstable`, adding or
@@ -46,62 +46,49 @@ preparing a pull request against nixpkgs, to check whether a change already land
 
 ## CI
 
-| job | what it does |
-| --- | --- |
-| `plan` | reads `branches.txt`, narrowed by the `only` input |
-| `update` | the bot, see below; its commits go to `ci/<branch>`, never straight to the branch |
-| `verify` | `nixpkgs-review rev <candidate>` for that one branch; on success fast-forwards the branch and deletes the candidate, on failure drops the candidate |
-| `integrate` | rebases every branch in `branches.txt` onto current upstream `nixos-unstable`, force-pushes `integration`, then rebases this CI commit onto upstream `nixos-unstable` |
-| `review-integration` | full `nixpkgs-review` of the integration tree, x86_64 only |
+Three workflows, each with one job:
 
-A package branch only ever moves through a review that passed, so there is nothing to roll
-back. `review-integration` is the safety net: it runs *after* `integration` is pushed, so a
-failure there cannot block a branch update or the integration itself — it only shows which
-package breaks once everything is merged (or when upstream moves a dependency underneath
-one). Branches the bot did not touch are not re-reviewed on the way; use
-`nixpkgs-branch.yml` for that.
+| workflow | trigger | what it does |
+| --- | --- | --- |
+| `ci-check` | push to `master` touching `nixpkgs-ci/**` or `.github/workflows/**` | parses every workflow's YAML, checks `branches.txt` syntax, and checks that each branch exists on the fork |
+| `update` | hourly at `:13`, manual (`only`, `verify_only`) | per branch: `nix-update`, IFD check, build, and only then push the branch |
+| `integrate` | after `update` finishes, hourly at `:43`, manual | rebase every branch onto current `nixos-unstable`, push `integration`, build the attributes the branches carry |
 
-There is a second, much smaller workflow, `nixpkgs-branch.yml`, which reviews one branch on
-demand and touches nothing:
+A docs-only push to `master` costs `ci-check` (~15 s) and nothing else.
 
-```bash
-gh workflow run nixpkgs-branch.yml -R mtul0729/nixpkgs -f branch=pkg/activitywatch
-gh workflow run nixpkgs-branch.yml -R mtul0729/nixpkgs -f branch=pkg/helix -f system=aarch64-linux
-```
+### update
 
-It is the fast path after a manual fix: ~8 minutes, one branch, no update matrix, no
-integration.
+One matrix leg per branch, and a leg does **upgrade → verify → push** in the same
+workspace, so a branch never receives a commit that has not been built:
 
-Triggers: hourly at `:13` (the bot is the only reason this fork needs a schedule),
-pushes to `master` that touch `nixpkgs-ci/**` or the workflow file, and
-`workflow_dispatch` with `only` / `skip_update`.
+1. `nix-update -u <pkg> --format` — a package opts in by declaring `passthru.updateScript`;
+2. `nix-instantiate --option allow-import-from-derivation false -A <pkg>.drvPath`, the same
+   IFD check `pkgs/README.md` asks for;
+3. `nix-build -A <pkg>` inside `cachix watch-exec mtul`, so the result lands in the cache;
+4. only then `git commit` and `git push`.
 
-```bash
-gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs                    # every branch
-gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f only=pkg/helix      # one branch
-gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f skip_update=true
-```
+If the build fails, nothing is committed. To keep a broken version from being retried
+every hour, the leg pushes a `ci-failed/<branch>/<tree>` tag; the next run computes the
+same tree, sees the tag, and skips. Touch the package — or a new version appears — and
+the tree changes, so it retries on its own. A successful update deletes that branch's
+tags.
 
-### The update bot
+`-f only=pkg/helix` limits a run to those branches. `-f verify_only=true` skips
+`nix-update` and only runs the two checks: that is the fast loop after a manual fix.
 
-`update` walks `branches.txt` and, for each branch, takes the by-name packages the
-branch adds or modifies relative to upstream `nixos-unstable`. A package opts into automatic
-updates by declaring `passthru.updateScript`; everything else is pinned on purpose and
-the bot never touches it. The decision lives in the package, not in the workflow:
+### integrate
 
-```nix
-passthru.updateScript = nix-update-script {
-  extraArgs = [ "--version-regex" "v([0-9.]+)" ];  # only if the feed has non-version tags
-};
-```
+`integrate` rebases every branch onto the current `nixos-unstable`, pushes `integration`,
+then runs `nix-build` for the attributes those branches declare (`branches.txt`'s
+explicit list first, otherwise the by-name directory names).
 
-Then `nix-update -u <pkg> --format` runs and the result is committed to `ci/<branch>`.
-Nothing is built there: `verify` reviews that candidate, and only a passing review
-fast-forwards it onto the branch. A pinned package is simply one without the attribute.
+That build is the drift check. Each branch was verified against **its own** base, while
+`integration` is built against **today's** unstable: if upstream moved a dependency, the
+derivation changes and gets rebuilt here, and a package that no longer builds turns the
+run red. When nothing changed it is a pure download.
 
-A branch without a candidate is assumed to be in the state its last passing review left
-it in; `nixpkgs-branch.yml` exists to check one anyway.
-
+A branch that fails to rebase is skipped and named in the error; the others are still
+published.
 ## Adding a package
 
 1. Create a branch from upstream `nixos-unstable` and add `pkgs/by-name/<shard>/<name>/package.nix`.
@@ -117,21 +104,22 @@ it in; `nixpkgs-branch.yml` exists to check one anyway.
    ```
 
 5. Add the branch name to `nixpkgs-ci/branches.txt` on `master`.
-6. `gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f only=<branch>`, then confirm the
-   package appears in the `verify` build list and in the cache (see below).
+6. `gh workflow run update.yml -R mtul0729/nixpkgs -f only=<branch>`, then confirm the
+   package was built (the leg's log) and landed in the cache (see below).
 
 ### Fixing a failing package
 
-A failed `verify` leaves the branch exactly as it was: the candidate is dropped, nothing
-is rolled back. To iterate:
+`update` never leaves a broken commit on the branch: the build fails, nothing is
+committed, and the run goes red. To iterate:
 
 1. `jj workspace add ../fix-<name> -r 'pkg/<name>@origin'`
 2. reproduce with `nix-build . -A <attr> --no-out-link` — same base as CI, so a local
    success is the derivation the runner would build
 3. fix, then run the checks from *Adding a package* above plus `nixfmt`
 4. push the branch
-5. `gh workflow run nixpkgs-branch.yml -R mtul0729/nixpkgs -f branch=pkg/<name>` reviews
-   that branch's new tip (~8 minutes, nothing else runs)
+5. `gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/<name> -f verify_only=true`
+   runs the two checks without touching `nix-update` (~2-3 minutes)
+6. `gh workflow run integrate.yml -R mtul0729/nixpkgs` publishes it into `integration`
 
 Do not make a failing check pass by turning it off (`doCheck = false`, `--impure`, a local
 override). If a package cannot build, leave the branch alone and say so.
@@ -159,7 +147,7 @@ in a real fixed-output derivation.
 
 ## Checking the cache
 
-A green `verify` run does not by itself mean a path is substitutable — a different
+A green `update` or `integrate` run does not by itself mean a path is substitutable — a different
 nixpkgs baseline produces a different derivation for the same package version. Ask the
 cache directly:
 

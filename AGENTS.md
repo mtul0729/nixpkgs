@@ -103,7 +103,7 @@ drops them. `magpie` needs upstream's throw-alias for the removed magnifier dele
 
 4. Add the branch to `nixpkgs-ci/branches.txt` on `master` **only after it exists on the
    fork** — `integrate` fetches every listed branch and fails hard if one is missing.
-5. Push the branch, then `gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f only=<branch>`.
+5. Push the branch, then `gh workflow run update.yml -R mtul0729/nixpkgs -f only=<branch>`.
 
 Push without touching the remote configuration or moving bookmarks:
 
@@ -185,16 +185,13 @@ gh run view <id> -R mtul0729/nixpkgs --log --job=<job id>
 ```
 
 In `update` look for `branches: ...`, `updatable: [...]`, and `<pkg>: already at
-<version>` or `candidate <pkg>: <old> -> <new>`. Hundreds of entries in `updatable`
-mean the branch-base rule above was violated — stop and fix the branch. `update` only
-pushes to `ci/<branch>`; the branch itself moves in `verify`, and a `verify` leg that
-failed leaves it untouched. In `verify` the package must appear under
-`this derivation will be built:`; a package missing from that list is a silent eval
-failure, not a success. `integrate` only does git; the safety net is
-`review-integration`, which runs after `integration` is pushed and therefore cannot block
-anything — a red run there means the merged tree (or upstream) broke a package. A green
-run does not prove substitutability: compare the store path's `.narinfo` on
-`mtul.cachix.org`.
+<version>` or `pushed <pkg>: <old> -> <new>`; a leg that built and pushed is the only
+thing that moves a branch. Hundreds of entries in `updatable` mean the branch-base rule
+above was violated — stop and fix the branch. `ci-failed/<branch>/<tree>` tags are the
+backoff record: the tag says that exact tree was built and failed, so it is skipped until
+the tree changes. In `integrate`, `will build: ...` lists the attributes the merged
+branches carry — a package missing from that list was never checked. A green run does not
+prove substitutability: compare the store path's `.narinfo` on `mtul.cachix.org`.
 
 ## About this file
 
