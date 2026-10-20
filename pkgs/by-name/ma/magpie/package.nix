@@ -35,9 +35,11 @@
 {
   lib,
   buildGoModule,
+  bun,
   fetchFromGitHub,
   gtk4,
   makeDesktopItem,
+  makeWrapper,
   nix-update-script,
   pkg-config,
   webkitgtk_6_0,
@@ -88,7 +90,10 @@ buildGoModule (finalAttrs: {
     "-X main.version=v${finalAttrs.version}"
   ];
 
-  nativeBuildInputs = [ pkg-config ];
+  nativeBuildInputs = [
+    makeWrapper
+    pkg-config
+  ];
 
   buildInputs = [
     gtk4
@@ -99,6 +104,15 @@ buildGoModule (finalAttrs: {
     install -Dm644 build/windows/icon-256.png $out/share/icons/hicolor/256x256/apps/magpie.png
     install -Dm644 ${desktopItem}/share/applications/magpie.desktop \
       $out/share/applications/magpie.desktop
+  '';
+
+  # 插件用 Bun 安装和运行。上游默认在运行时自己下载并自动更新
+  # (internal/plugin/bun.go, bunupdate.go)；这里指向 nixpkgs 的 bun，插件安装
+  # 因此离线可用，也不再跟着上游自动升级。--set-default: 显式设了 MAGPIE_BUN
+  # 的用户不受影响。
+  postFixup = ''
+    wrapProgram $out/bin/magpie \
+      --set-default MAGPIE_BUN ${lib.getExe bun}
   '';
 
   # Upstream CI already exercises this tag; the package layer need not repeat
