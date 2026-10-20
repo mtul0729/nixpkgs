@@ -13,3 +13,6 @@ pkg/helix
 pkg/cosmic-desktop-mcp
 pkg/activitywatch: aw-server-rust
 pkg/fcitx5-vinput
+# audacious 是 all-packages.nix 里的包装（audacious-bare.override），不在 by-name
+# 下，所以显式列出；分支真正改的是 by-name 里的 audacious-bare / audacious-plugins。
+pkg/audacious: audacious
