@@ -131,7 +131,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Restore the nixpkgs git cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: nixpkgs/.git
           key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-${{ strategy.job-index }}
@@ -254,12 +254,27 @@ jobs:
 
       # nixpkgs 的历史里绝大多数是 blob，而 rebase 只要 commit 和 tree；
       # blob:none 让这一步从十几分钟降到一两分钟，检出时再按需拉当前树。
-      - uses: actions/checkout@v5
+      - name: Restore the nixpkgs git cache
+        uses: actions/cache@v6
         with:
-          repository: ${{ env.UPSTREAM }}
-          path: nixpkgs
-          fetch-depth: 0
-          filter: blob:none
+          path: nixpkgs/.git
+          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-${{ strategy.job-index }}
+          restore-keys: |
+            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
+
+      - name: Fetch upstream
+        run: |
+          set -euo pipefail
+          # Full commit graph without blobs, restored from the cache when there
+          # is one: on a cold runner this fetch alone costs ~5 minutes over
+          # nixpkgs' ~1M commits.
+          mkdir -p nixpkgs
+          git -C nixpkgs rev-parse --git-dir >/dev/null 2>&1 || git -C nixpkgs init -q
+          git -C nixpkgs remote add origin "https://github.com/$UPSTREAM" 2>/dev/null \
+            || git -C nixpkgs remote set-url origin "https://github.com/$UPSTREAM"
+          git -C nixpkgs fetch -q --filter=blob:none --no-tags origin \
+            "+refs/heads/$UPSTREAM_BRANCH:refs/remotes/origin/$UPSTREAM_BRANCH"
+          git -C nixpkgs checkout -q -f -B "$UPSTREAM_BRANCH" "origin/$UPSTREAM_BRANCH"
 
       # GITHUB_TOKEN 推不了：integration 分支第一次出现时，整棵 nixpkgs 树都算
       # "新增的 workflow 文件"，需要 workflow 权限。PUSH_TOKEN 是有 workflow
@@ -393,11 +408,26 @@ jobs:
           swap-storage: false
 
       # nixpkgs-review 要 merge-base，浅克隆不行。
-      - uses: actions/checkout@v5
+      - name: Restore the nixpkgs git cache
+        uses: actions/cache@v6
         with:
-          repository: ${{ env.UPSTREAM }}
-          fetch-depth: 0
-          filter: blob:none
+          path: nixpkgs/.git
+          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-${{ strategy.job-index }}
+          restore-keys: |
+            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
+
+      - name: Fetch upstream
+        run: |
+          set -euo pipefail
+          # Same cache and same layout as the other jobs: nixpkgs' history is
+          # far too expensive to fetch from scratch on every run.
+          mkdir -p nixpkgs
+          git -C nixpkgs rev-parse --git-dir >/dev/null 2>&1 || git -C nixpkgs init -q
+          git -C nixpkgs remote add origin "https://github.com/$UPSTREAM" 2>/dev/null \
+            || git -C nixpkgs remote set-url origin "https://github.com/$UPSTREAM"
+          git -C nixpkgs fetch -q --filter=blob:none --no-tags origin \
+            "+refs/heads/$UPSTREAM_BRANCH:refs/remotes/origin/$UPSTREAM_BRANCH"
+          git -C nixpkgs checkout -q -f -B "$UPSTREAM_BRANCH" "origin/$UPSTREAM_BRANCH"
 
       - uses: cachix/install-nix-action@v31
         with:
@@ -412,6 +442,7 @@ jobs:
       - name: Fetch ${{ matrix.target }}
         env:
           TARGET: ${{ matrix.target }}
+        working-directory: nixpkgs
         run: |
           set -euo pipefail
           git fetch --no-tags "https://github.com/$FORK" \
@@ -429,6 +460,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           SYSTEM: ${{ matrix.system }}
+        working-directory: nixpkgs
         run: |
           set -euo pipefail
           cachix watch-exec mtul -- nixpkgs-review rev "$sha" -b "$UPSTREAM_BRANCH" --no-shell --system "$SYSTEM"
