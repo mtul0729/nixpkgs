@@ -79,7 +79,15 @@ jobs:
       targets: ${{ steps.plan.outputs.targets }}
       count: ${{ steps.plan.outputs.count }}
       update: ${{ steps.plan.outputs.update }}
+      branches: ${{ steps.plan.outputs.branches }}
     steps:
+      # 只有 nixpkgs-ci/ 目录，不需要整个 fork。
+      - uses: actions/checkout@v5
+        with:
+          path: fork
+          sparse-checkout: nixpkgs-ci
+          sparse-checkout-cone-mode: false
+
       - id: plan
         env:
           ONLY: ${{ inputs.only }}
@@ -95,6 +103,15 @@ jobs:
           echo "targets=$json" >> "$GITHUB_OUTPUT"
           echo "count=$(jq length <<< "$json")" >> "$GITHUB_OUTPUT"
           echo "update=$([ "${SKIP_UPDATE:-false}" = "true" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+
+          # branch 名列表给 update 的 matrix 用；`branch: pkg` 里的包名留给
+          # update 步骤自己去那一行里取。
+          names=$(grep -v '^[[:space:]]*#' "$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt" \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+            | grep -v '^$' \
+            | sed 's/:.*//' \
+            | jq -R . | jq -sc .)
+          echo "branches=$names" >> "$GITHUB_OUTPUT"
           jq -r '.[]' <<< "$json"
 
   update:
@@ -102,12 +119,24 @@ jobs:
     if: needs.plan.outputs.update == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.plan.outputs.branches) }}
     steps:
       - uses: actions/checkout@v5
         with:
           path: fork
           sparse-checkout: nixpkgs-ci
           sparse-checkout-cone-mode: false
+
+      - name: Restore the nixpkgs git cache
+        uses: actions/cache@v4
+        with:
+          path: nixpkgs/.git
+          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-${{ strategy.job-index }}
+          restore-keys: |
+            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
 
       - name: Free disk space
         uses: jlumbroso/free-disk-space@v2.0.0
@@ -129,142 +158,96 @@ jobs:
           name: mtul
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-      # nix-update 做改写，nixfmt 是 --format 要用的；update.sh 自己的
-      # nix-shell shebang 也会拉一次，但外层这两个参数在它的进程外执行。
       - name: Install nix-update and nixfmt
         run: nix profile install nixpkgs#nix-update nixpkgs#nixfmt
 
-      - name: Upgrade whatever each branch declares as updatable
+      - name: Upgrade ${{ matrix.branch }}
         env:
-          # update.nix builds bashInteractive from <nixpkgs>, and a nix-shell
-          # shebang resolves <nixpkgs> before the script body runs; the runner
-          # has no NIX_PATH by default. Point it at the checkout made below.
           NIX_PATH: nixpkgs=${{ github.workspace }}/nixpkgs
           TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ matrix.branch }}
         run: |
           set -euo pipefail
-          # 绝对路径：这个 job 后面会 cd 进 nixpkgs，相对路径会指丢。
           LIST="$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt"
-          # One branch per line. A line may also name the packages the bot
-          # should look at: `activitywatch: aw-server-rust aw-webui`. A package
-          # outside pkgs/by-name cannot be found by diffing file paths, so a
-          # branch that carries one declares it here.
-          declare -A EXPLICIT=()
-          BRANCHES=()
-          while IFS= read -r line; do
-            case "$line" in
-              ''|'#'*) continue ;;
-            esac
-            b="${line%%:*}"
-            b="$(printf '%s' "$b" | sed 's/[[:space:]]*$//')"
-            [ -n "$b" ] || continue
-            BRANCHES+=("$b")
-            case "$line" in
-              *:*) EXPLICIT["$b"]="$(printf '%s' "${line#*:}" | tr ',' ' ')" ;;
-            esac
-          done < <(grep -v '^[[:space:]]*#' "$LIST" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-          if [ ${#BRANCHES[@]} -eq 0 ]; then
-            echo "::error::$LIST 里一个分支都没有；是文件丢了还是格式不对？"
+          line=$(grep -E "^${BRANCH}(:|$)" "$LIST" | head -1 || true)
+          if [ -z "$line" ]; then
+            echo "::error::$BRANCH 不在 branches.txt 里"
             exit 1
           fi
-          echo "branches: ${BRANCHES[*]}"
 
-          # nix-update evaluates the whole tree, so this is a full checkout.
-          # master keeps its commit graph (blobs are filtered out) because
-          # merge-base needs it; blobs are fetched lazily when checked out.
-          git init -q nixpkgs
+          if [ ! -d nixpkgs/.git ]; then
+            git init -q nixpkgs
+          fi
           cd nixpkgs
-          git remote add origin "https://github.com/$UPSTREAM"
+          git remote add origin "https://github.com/$UPSTREAM" 2>/dev/null \
+            || git remote set-url origin "https://github.com/$UPSTREAM"
           git fetch -q --filter=blob:none --no-tags origin "$UPSTREAM_BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch -q --no-tags "https://github.com/$FORK" \
+            "+refs/heads/$BRANCH:refs/remotes/fork/$BRANCH"
+          git checkout -q -f -B bot "refs/remotes/fork/$BRANCH"
 
-          refspecs=()
-          for b in "${BRANCHES[@]}"; do
-            refspecs+=("+refs/heads/$b:refs/remotes/fork/$b")
-          done
-          # No --depth: a depth-1 branch has no history, so merge-base would
-          # find no common ancestor. Branches are only a few commits anyway.
-          git fetch -q --no-tags "https://github.com/$FORK" "${refspecs[@]}"
-
-          for b in "${BRANCHES[@]}"; do
-            echo "::group::$b"
-            git checkout -q -B "bot-$b" "refs/remotes/fork/$b"
-
-            # The branch's own packages are the by-name packages it adds or
-            # modifies since it left upstream: a branch is a package (or a
-            # few), and editing an existing package counts just as much as
-            # adding one. Compare against the merge base, never the upstream tip
-            # directly: a topic branch does not follow upstream, so a
-            # two-point diff also counts every upstream change made since the
-            # branch's base (1942 packages in one measured case) and the bot
-            # would push unrelated commits onto the branch.
-            base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$b")
-            if [ -n "${EXPLICIT[$b]:-}" ]; then
-              # The branch names its packages; file paths say nothing useful
-              # for a package that lives outside pkgs/by-name.
-              read -r -a NEW <<< "${EXPLICIT[$b]}"
-            else
+          # A line may name its packages (`branch: pkg1 pkg2`); otherwise take
+          # the by-name packages the branch adds or modifies since it left
+          # upstream. The merge base, never the upstream tip: a topic branch
+          # does not follow upstream, and a two-point diff would count every
+          # upstream change since its base.
+          case "$line" in
+            *:*) read -r -a NEW <<< "$(printf '%s' "${line#*:}" | tr ',' ' ')" ;;
+            *)
+              base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$BRANCH")
               mapfile -t NEW < <(
-                git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$b" \
+                git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$BRANCH" \
                   -- 'pkgs/by-name/*/*/package.nix' \
                   | awk -F/ '{print $4}' | sort -u
               )
-            fi
-            if [ ${#NEW[@]} -eq 0 ]; then
-              echo "no new packages on this branch"
-              git checkout -q --detach
-              echo "::endgroup::"
+              ;;
+          esac
+          if [ ${#NEW[@]} -eq 0 ]; then
+            echo "$BRANCH: no packages"
+            exit 0
+          fi
+
+          names=$(printf '%s\n' "${NEW[@]}" | jq -R . | jq -sc .)
+          # A package opts into automatic updates by declaring an updateScript.
+          updatable=$(nix-instantiate --eval --json --strict --expr "
+            let pkgs = import ./. { };
+            in builtins.filter
+                 (n: (builtins.tryEval (pkgs.\${n} ? updateScript)).value or false)
+                 (builtins.fromJSON ''$names'')")
+          echo "updatable: $updatable"
+
+          for pkg in $(jq -r '.[]' <<< "$updatable"); do
+            old=$(nix-instantiate --eval --raw -A "$pkg.version")
+            # Update only. Building an unchanged package is the expensive part:
+            # a Rust package compiles and runs its tests even when the version
+            # did not move. A real change shows up in the diff below, and only
+            # then is the package built.
+            if ! nix-update -u "$pkg" --format; then
+              echo "::warning::$BRANCH: $pkg 升级失败，分支保持原样"
+              git reset -q --hard "refs/remotes/fork/$BRANCH"
               continue
             fi
-
-            names=$(printf '%s\n' "${NEW[@]}" | jq -R . | jq -sc .)
-            # A package opts into automatic updates by declaring an
-            # updateScript. Everything else is pinned on purpose, so the bot
-            # leaves it alone.
-            updatable=$(nix-instantiate --eval --json --strict --expr "
-              let pkgs = import ./. { };
-              in builtins.filter
-                   (n: (builtins.tryEval (pkgs.\${n} ? updateScript)).value or false)
-                   (builtins.fromJSON ''$names'')")
-            echo "updatable: $updatable"
-
-            for pkg in $(jq -r '.[]' <<< "$updatable"); do
-              old=$(nix-instantiate --eval --raw -A "$pkg.version")
-              # Update only. Building an unchanged package is the expensive part:
-              # a Rust package compiles and runs its tests even when the version
-              # did not move, which cost ~18 minutes for a single already-at
-              # package. Any real change is caught by the diff below, and only
-              # then is the package built.
-              if ! nix-update -u "$pkg" --format; then
-                echo "::warning::$b: $pkg 升级失败，分支保持原样"
-                git reset -q --hard "refs/remotes/fork/$b"
-                continue
-              fi
-              if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
-                echo "$pkg: already at $old"
-                continue
-              fi
-              # --build keeps a version that does not compile out of the branch.
-              if ! nix-build -A "$pkg" --no-out-link; then
-                echo "::warning::$b: $pkg 构建失败，分支保持原样"
-                git reset -q --hard "refs/remotes/fork/$b"
-                continue
-              fi
-              new=$(nix-instantiate --eval --raw -A "$pkg.version")
-              git add -A pkgs
-              git commit -q -m "$pkg: $old -> $new"
-              if git push "https://x-access-token:$TOKEN@github.com/$FORK.git" \
-                "HEAD:refs/heads/$b"; then
-                echo "pushed $pkg: $old -> $new"
-              else
-                # Someone else touched the branch while we were building.
-                echo "::warning::$b: 推送 $pkg 失败（分支刚被改过），这次跳过"
-                git reset -q --hard "refs/remotes/fork/$b"
-              fi
-            done
-            git checkout -q --detach
-            echo "::endgroup::"
+            if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+              echo "$pkg: already at $old"
+              continue
+            fi
+            if ! nix-build -A "$pkg" --no-out-link; then
+              echo "::warning::$BRANCH: $pkg 构建失败，分支保持原样"
+              git reset -q --hard "refs/remotes/fork/$BRANCH"
+              continue
+            fi
+            new=$(nix-instantiate --eval --raw -A "$pkg.version")
+            git add -A pkgs
+            git commit -q -m "$pkg: $old -> $new"
+            if git push "https://x-access-token:$TOKEN@github.com/$FORK.git" \
+              "HEAD:refs/heads/$BRANCH"; then
+              echo "pushed $pkg: $old -> $new"
+            else
+              echo "::warning::$BRANCH: 推送 $pkg 失败（分支刚被改过），这次跳过"
+              git reset -q --hard "refs/remotes/fork/$BRANCH"
+            fi
           done
 
   integrate:
