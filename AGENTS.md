@@ -21,11 +21,13 @@ a tool's limitation — ours or upstream's — before checking whether the docum
 mechanism exists. The same goes for tool behaviour: read `--help` or the source instead of
 assuming. `nix-update`'s inability to bump a path-based `src` was established that way,
 after two wrong guesses.
+
 ## Invariants
 
-- `master` is *upstream `nixos-unstable` + exactly one commit*. Never append a second
-  commit. The commit is on a remote bookmark, so it is immutable locally: build the
-  replacement on `nixos-unstable@upstream`, then force-push it to `master`.
+- `master` carries only CI files and documentation, never package code. It may hold
+  more than one commit; what matters is that it stays based on current `nixos-unstable`,
+  which CI redoes hourly. Add commits normally (`jj new master@origin`, edit, push)
+  instead of rewriting a single amended commit.
 - Package code never goes on `master`. One topic branch per package.
 - **A topic branch's base must be the same branch the pipeline uses** (`nixos-unstable`).
   A branch cut from `master` makes `merge-base` collapse to the upstream tip, so the
