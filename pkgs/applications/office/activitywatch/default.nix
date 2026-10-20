@@ -18,6 +18,8 @@
   replaceVars,
   nodejs_22,
   buildNpmPackage,
+  stdenv,
+  removeReferencesTo,
 }:
 
 let
@@ -235,6 +237,15 @@ rec {
     preCheck = ''
       # Fake home folder for tests that use ~/.cache and ~/.local/share
       export HOME="$TMPDIR"
+    '';
+
+    # One of the crates bakes the compiler it was built with into aw-sync.
+    # Nothing reads it at runtime, but the reference drags gcc (~280 MiB) into
+    # the closure of every machine that runs the server.
+    postFixup = ''
+      for f in $out/bin/*; do
+        ${removeReferencesTo}/bin/remove-references-to -t ${stdenv.cc} "$f"
+      done
     '';
 
     passthru.updateScript = ./update.sh;
