@@ -34,10 +34,11 @@ packages. Adding a branch means editing that file; CI reads nothing else.
 | --- | --- | --- |
 | `master` | humans and CI | the workflow, this document, `AGENTS.md` and `branches.txt` — no package code. CI rewrites this single commit onto the current `nixos-unstable` every hour |
 | `integration` | CI only | generated: `nixos-unstable` with every branch below rebased on top. Never edit or push it by hand; consumers pin `github:mtul0729/nixpkgs/integration` |
-| `magpie` | humans + update bot | Go/Wails model switcher, tracked by `vX.Y.Z` release tags. Also drops upstream's throw-alias for the removed package of the same name |
-| `dashbeam` | humans + update bot | Tauri 2 + pnpm file transfer tool |
-| `helix` | humans + update bot | nixpkgs' own `helix` / `helix-unwrapped`, changed to track upstream master instead of the release tag |
-| `cosmic-desktop-mcp` | humans + update bot | MCP server for driving a COSMIC/Wayland desktop; the source stays in `mtul0729/cosmic-desktop-mcp` |
+| `pkg/magpie` | humans + update bot | Go/Wails model switcher, tracked by `vX.Y.Z` release tags. Also drops upstream's throw-alias for the removed package of the same name |
+| `pkg/dashbeam` | humans + update bot | Tauri 2 + pnpm file transfer tool |
+| `pkg/helix` | humans + update bot | nixpkgs' own `helix` / `helix-unwrapped`, changed to track upstream master instead of the release tag |
+| `pkg/cosmic-desktop-mcp` | humans + update bot | MCP server for driving a COSMIC/Wayland desktop; the source stays in `mtul0729/cosmic-desktop-mcp` |
+| `pkg/activitywatch` | humans + update bot | aw-server-rust and aw-webui at 0.14.1, built in place with a custom update script; the Python components of the bundle stay at 0.13.2 |
 
 Upstream `master` plays no part in this pipeline: branches are cut from `nixos-unstable` and
 every job is based on it. The one remaining reason to look at upstream `master` is when
@@ -60,7 +61,7 @@ pushes to `master` that touch `nixpkgs-ci/**` or the workflow file, and
 
 ```bash
 gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs                    # integration only
-gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f only=helix      # one branch
+gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f only=pkg/helix      # one branch
 gh workflow run nixpkgs-ci.yml -R mtul0729/nixpkgs -f skip_update=true
 ```
 
