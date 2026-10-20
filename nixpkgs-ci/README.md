@@ -51,13 +51,26 @@ preparing a pull request against nixpkgs, to check whether a change already land
 | `plan` | reads `branches.txt`, narrowed by the `only` input |
 | `update` | the bot, see below; its commits go to `ci/<branch>`, never straight to the branch |
 | `verify` | `nixpkgs-review rev <candidate>` for that one branch; on success fast-forwards the branch and deletes the candidate, on failure drops the candidate |
-| `integrate` | rebases every branch in `branches.txt` onto current upstream `nixos-unstable`, force-pushes `integration`, builds the attributes those branches carry, then rebases this CI commit onto upstream `nixos-unstable` |
+| `integrate` | rebases every branch in `branches.txt` onto current upstream `nixos-unstable`, force-pushes `integration`, then rebases this CI commit onto upstream `nixos-unstable` |
+| `review-integration` | full `nixpkgs-review` of the integration tree, x86_64 only |
 
 A package branch only ever moves through a review that passed, so there is nothing to roll
-back. `integrate` then rebuilds what the branches carry: cheap when the cache has it, red
-when upstream moved a dependency underneath a package. There is no full review of
-`integration` any more — each branch is reviewed on its own, so one broken package no
-longer hides the other four.
+back. `review-integration` is the safety net: it runs *after* `integration` is pushed, so a
+failure there cannot block a branch update or the integration itself — it only shows which
+package breaks once everything is merged (or when upstream moves a dependency underneath
+one). Branches the bot did not touch are not re-reviewed on the way; use
+`nixpkgs-branch.yml` for that.
+
+There is a second, much smaller workflow, `nixpkgs-branch.yml`, which reviews one branch on
+demand and touches nothing:
+
+```bash
+gh workflow run nixpkgs-branch.yml -R mtul0729/nixpkgs -f branch=pkg/activitywatch
+gh workflow run nixpkgs-branch.yml -R mtul0729/nixpkgs -f branch=pkg/helix -f system=aarch64-linux
+```
+
+It is the fast path after a manual fix: ~8 minutes, one branch, no update matrix, no
+integration.
 
 Triggers: hourly at `:13` (the bot is the only reason this fork needs a schedule),
 pushes to `master` that touch `nixpkgs-ci/**` or the workflow file, and
@@ -86,8 +99,8 @@ Then `nix-update -u <pkg> --format` runs and the result is committed to `ci/<bra
 Nothing is built there: `verify` reviews that candidate, and only a passing review
 fast-forwards it onto the branch. A pinned package is simply one without the attribute.
 
-`only=<branch>` on a manual run also reviews the branch's current tip when the bot has
-no candidate — that is the fast path after fixing something by hand.
+A branch without a candidate is assumed to be in the state its last passing review left
+it in; `nixpkgs-branch.yml` exists to check one anyway.
 
 ## Adding a package
 
@@ -117,8 +130,8 @@ is rolled back. To iterate:
    success is the derivation the runner would build
 3. fix, then run the checks from *Adding a package* above plus `nixfmt`
 4. push the branch
-5. `gh workflow run nixpkgs-ci.yml -f only=pkg/<name>` reviews that branch's new tip
-   (~8 minutes: one update leg, one verify leg, no integration review)
+5. `gh workflow run nixpkgs-branch.yml -R mtul0729/nixpkgs -f branch=pkg/<name>` reviews
+   that branch's new tip (~8 minutes, nothing else runs)
 
 Do not make a failing check pass by turning it off (`doCheck = false`, `--impure`, a local
 override). If a package cannot build, leave the branch alone and say so.
