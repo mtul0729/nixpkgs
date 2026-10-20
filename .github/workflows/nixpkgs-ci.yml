@@ -145,11 +145,24 @@ jobs:
           set -euo pipefail
           # 绝对路径：这个 job 后面会 cd 进 nixpkgs，相对路径会指丢。
           LIST="$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt"
-          mapfile -t BRANCHES < <(
-            grep -v '^[[:space:]]*#' "$LIST" \
-              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
-              | grep -v '^$'
-          )
+          # One branch per line. A line may also name the packages the bot
+          # should look at: `activitywatch: aw-server-rust aw-webui`. A package
+          # outside pkgs/by-name cannot be found by diffing file paths, so a
+          # branch that carries one declares it here.
+          declare -A EXPLICIT=()
+          BRANCHES=()
+          while IFS= read -r line; do
+            case "$line" in
+              ''|'#'*) continue ;;
+            esac
+            b="${line%%:*}"
+            b="$(printf '%s' "$b" | sed 's/[[:space:]]*$//')"
+            [ -n "$b" ] || continue
+            BRANCHES+=("$b")
+            case "$line" in
+              *:*) EXPLICIT["$b"]="$(printf '%s' "${line#*:}" | tr ',' ' ')" ;;
+            esac
+          done < <(grep -v '^[[:space:]]*#' "$LIST" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
           if [ ${#BRANCHES[@]} -eq 0 ]; then
             echo "::error::$LIST 里一个分支都没有；是文件丢了还是格式不对？"
             exit 1
@@ -187,11 +200,17 @@ jobs:
             # branch's base (1942 packages in one measured case) and the bot
             # would push unrelated commits onto the branch.
             base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$b")
-            mapfile -t NEW < <(
-              git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$b" \
-                -- 'pkgs/by-name/*/*/package.nix' \
-                | awk -F/ '{print $4}' | sort -u
-            )
+            if [ -n "${EXPLICIT[$b]:-}" ]; then
+              # The branch names its packages; file paths say nothing useful
+              # for a package that lives outside pkgs/by-name.
+              read -r -a NEW <<< "${EXPLICIT[$b]}"
+            else
+              mapfile -t NEW < <(
+                git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$b" \
+                  -- 'pkgs/by-name/*/*/package.nix' \
+                  | awk -F/ '{print $4}' | sort -u
+              )
+            fi
             if [ ${#NEW[@]} -eq 0 ]; then
               echo "no new packages on this branch"
               git checkout -q --detach
