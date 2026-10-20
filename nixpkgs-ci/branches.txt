@@ -1,0 +1,14 @@
+# 我维护的包，一个分支一组。CI 把这里的分支依次 rebase 到 NixOS/nixpkgs 的
+# nixos-unstable 上，拼成 integration 分支 —— sysadmin 引的就是它，所以这里列出的每个
+# 分支都会进到系统里那份 nixpkgs。
+#
+# 提不提 PR 都行：这份清单只管「我的包」，提 PR 是从某个分支单独做的事。
+# 顺序有意义，后面的分支可以依赖前面的。
+#
+# 一行可以是「分支」，也可以是「分支: 包名 包名」。后者用于包不在 pkgs/by-name 下的情况：
+# 更新 bot 靠改动的文件路径找候选包，路径里没有 by-name 的包只能在这里显式声明。
+dashbeam
+magpie
+helix
+cosmic-desktop-mcp
+activitywatch
