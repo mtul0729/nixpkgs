@@ -1,0 +1,236 @@
+# fork 的升级 workflow：把每个包分支升到上游最新版，验证通过才推回分支。
+#
+# 每个分支一个 matrix leg，在同一个 workspace 里完成：
+#   改文件（nix-update）→ IFD 检查 → 构建 → 提交并推送
+# 所以分支上不会出现没验证过的提交，也不需要候选分支或回滚。
+#
+# 同一个 tree 构建失败过，就打一个 ci-failed/<branch>/<tree> 的 tag；下一轮
+# 看到同一个 tree 直接跳过，不会每小时重试一个已知坏掉的版本。分支或包一旦被
+# 改动，tree 就变了，tag 不再匹配，自动重试。升级成功后清掉该分支的旧标记。
+#
+# 手动触发：
+#   gh workflow run update.yml -R mtul0729/nixpkgs
+#   gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/helix
+#   gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/helix -f verify_only=true
+name: update
+run-name: update (${{ inputs.only || 'all branches' }})
+
+on:
+  schedule:
+    # 每小时 :13。上游 magpie 一天出好几个 tag，靠的就是这个频率；没有新版本时
+    # 每个 leg 只跑一次 nix-update，不构建。
+    - cron: "13 * * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "只处理这些分支（逗号分隔）；留空 = branches.txt 里的全部"
+        type: string
+      verify_only:
+        description: "不升级，只验证选中的分支（配合 only 使用）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+env:
+  FORK: mtul0729/nixpkgs
+  UPSTREAM: NixOS/nixpkgs
+  UPSTREAM_BRANCH: nixos-unstable
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      branches: ${{ steps.plan.outputs.branches }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      # 只有 nixpkgs-ci/ 目录，不需要整个 fork。
+      - uses: actions/checkout@v5
+        with:
+          path: fork
+          sparse-checkout: nixpkgs-ci
+          sparse-checkout-cone-mode: false
+
+      - id: plan
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          set -euo pipefail
+          # branches.txt 是唯一来源；ONLY 只是从里面挑几个跑。
+          all=$(grep -v '^[[:space:]]*#' "$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt" \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+            | grep -v '^$' \
+            | sed 's/:.*//' \
+            | jq -R . | jq -sc .)
+          if [ -n "${ONLY:-}" ]; then
+            want=$(printf '%s' "$ONLY" | tr ',' '\n' \
+              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R . | jq -sc .)
+            names=$(jq -c --argjson want "$want" '[.[] | select(. as $b | $want | index($b))]' <<< "$all")
+          else
+            names="$all"
+          fi
+          echo "branches=$names" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq length <<< "$names")" >> "$GITHUB_OUTPUT"
+          jq -r '.[]' <<< "$names"
+
+  update:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.plan.outputs.branches) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: fork
+          sparse-checkout: nixpkgs-ci
+          sparse-checkout-cone-mode: false
+
+      - name: Restore the nixpkgs git cache
+        uses: actions/cache@v6
+        with:
+          path: nixpkgs/.git
+          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-${{ strategy.job-index }}
+          restore-keys: |
+            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: mtul
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Install nix-update
+        run: nix profile install nixpkgs#nix-update
+
+      - name: Upgrade and verify ${{ matrix.branch }}
+        env:
+          NIX_PATH: nixpkgs=${{ github.workspace }}/nixpkgs
+          TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ matrix.branch }}
+          VERIFY_ONLY: ${{ inputs.verify_only }}
+        run: |
+          set -euo pipefail
+          LIST="$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt"
+          line=$(grep -E "^${BRANCH}(:|$)" "$LIST" | head -1 || true)
+          if [ -z "$line" ]; then
+            echo "::error::$BRANCH 不在 branches.txt 里"
+            exit 1
+          fi
+
+          [ -d nixpkgs/.git ] || git init -q nixpkgs
+          cd nixpkgs
+          git remote add origin "https://github.com/$UPSTREAM" 2>/dev/null \
+            || git remote set-url origin "https://github.com/$UPSTREAM"
+          git fetch -q --filter=blob:none --no-tags origin "$UPSTREAM_BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch -q --no-tags "https://github.com/$FORK" \
+            "+refs/heads/$BRANCH:refs/remotes/fork/$BRANCH"
+          git checkout -q -f -B bot "refs/remotes/fork/$BRANCH"
+
+          # A line may name its packages (`branch: pkg1 pkg2`); otherwise take
+          # the by-name packages the branch adds or modifies since it left
+          # upstream. The merge base, never the upstream tip: a topic branch
+          # does not follow upstream, and a two-point diff would count every
+          # upstream change since its base.
+          case "$line" in
+            *:*) read -r -a NEW <<< "$(printf '%s' "${line#*:}" | tr ',' ' ')" ;;
+            *)
+              base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$BRANCH")
+              mapfile -t NEW < <(
+                git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$BRANCH" \
+                  -- 'pkgs/by-name/*/*/package.nix' \
+                  | awk -F/ '{print $4}' | sort -u
+              )
+              ;;
+          esac
+          if [ ${#NEW[@]} -eq 0 ]; then
+            echo "$BRANCH: no packages"
+            exit 0
+          fi
+
+          FORK_URL="https://x-access-token:$TOKEN@github.com/$FORK.git"
+
+          # 两条判据，和 pkgs/README.md 里加包的流程一致：IFD 关掉能出 drv，
+          # 然后真的构建（测试一起跑）。构建产物直接进 mtul。
+          verify() {
+            local a args=()
+            for a in "$@"; do
+              nix-instantiate --eval --strict \
+                --option allow-import-from-derivation false \
+                -A "$a.drvPath" >/dev/null
+              args+=(-A "$a")
+            done
+            cachix watch-exec mtul -- nix-build "${args[@]}" --no-out-link
+          }
+
+          if [ "$VERIFY_ONLY" = "true" ]; then
+            echo "verify only: ${NEW[*]}"
+            verify "${NEW[@]}"
+            exit 0
+          fi
+
+          names=$(printf '%s\n' "${NEW[@]}" | jq -R . | jq -sc .)
+          # A package opts into automatic updates by declaring an updateScript.
+          updatable=$(nix-instantiate --eval --json --strict --expr "
+            let pkgs = import ./. { };
+            in builtins.filter
+                 (n: (builtins.tryEval (pkgs.\${n} ? updateScript)).value or false)
+                 (builtins.fromJSON ''$names'')")
+          echo "updatable: $updatable"
+
+          for pkg in $(jq -r '.[]' <<< "$updatable"); do
+            old=$(nix-instantiate --eval --raw -A "$pkg.version")
+            before=$(git rev-parse HEAD)
+            if ! nix-update -u "$pkg" --format; then
+              echo "::warning::$BRANCH: $pkg 升级失败，跳过"
+              git reset -q --hard "$before"
+              continue
+            fi
+            if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+              echo "$pkg: already at $old"
+              continue
+            fi
+            new=$(nix-instantiate --eval --raw -A "$pkg.version")
+            git add -A pkgs
+            tree=$(git write-tree)
+            tag="ci-failed/$BRANCH/$tree"
+            # 这个 tree 已经试过并失败，不再重试；分支或包一变 tree 就变。
+            if git ls-remote --exit-code "$FORK_URL" "refs/tags/$tag" >/dev/null 2>&1; then
+              echo "::warning::$pkg $new 上次构建失败过（$tag），跳过"
+              git reset -q --hard "$before"
+              continue
+            fi
+            if ! verify "$pkg"; then
+              echo "::warning::$BRANCH: $pkg $new 构建失败，标记后跳过"
+              git tag -f "$tag" "refs/remotes/fork/$BRANCH"
+              git push -f "$FORK_URL" "refs/tags/$tag" || true
+              git reset -q --hard "$before"
+              continue
+            fi
+            git commit -q -m "$pkg: $old -> $new"
+            if git push "$FORK_URL" "HEAD:refs/heads/$BRANCH"; then
+              echo "pushed $pkg: $old -> $new"
+              # 这个分支以前的失败标记已经没意义了。
+              for t in $(git ls-remote --tags "$FORK_URL" "refs/tags/ci-failed/$BRANCH/*" \
+                | awk '{print $2}' | sed 's|^refs/tags/||'); do
+                git push "$FORK_URL" --delete "refs/tags/$t" || true
+              done
+            else
+              echo "::warning::$BRANCH: 推送失败（分支刚被改过），这次跳过"
+              git reset -q --hard "$before"
+            fi
+          done
