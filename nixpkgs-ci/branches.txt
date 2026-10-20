@@ -12,3 +12,4 @@ pkg/magpie
 pkg/helix
 pkg/cosmic-desktop-mcp
 pkg/activitywatch: aw-server-rust
+pkg/fcitx5-vinput
