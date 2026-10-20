@@ -7,8 +7,8 @@
 #
 # 一行可以是「分支」，也可以是「分支: 包名 包名」。后者用于包不在 pkgs/by-name 下的情况：
 # 更新 bot 靠改动的文件路径找候选包，路径里没有 by-name 的包只能在这里显式声明。
-dashbeam
-magpie
-helix
-cosmic-desktop-mcp
-activitywatch: aw-server-rust
+pkg/dashbeam
+pkg/magpie
+pkg/helix
+pkg/cosmic-desktop-mcp
+pkg/activitywatch: aw-server-rust
