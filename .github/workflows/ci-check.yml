@@ -1,0 +1,57 @@
+# master 上的便宜检查：workflow 的 YAML 能不能解析、branches.txt 格式对不对、
+# 列出的分支在 fork 上是否真的存在。integrate 取不到分支会硬失败，所以在推
+# master 时先拦下来，比跑一整条流水线便宜得多。
+name: ci-check
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - nixpkgs-ci/**
+      - .github/workflows/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORK: mtul0729/nixpkgs
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate workflow YAML
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import glob
+          import yaml
+
+          for path in sorted(glob.glob('.github/workflows/*.yml')):
+              yaml.safe_load(open(path))
+              print('ok', path)
+          PY
+
+      - name: Validate branches.txt
+        run: |
+          set -euo pipefail
+          while IFS= read -r line; do
+            name="${line%%:*}"
+            name="$(printf '%s' "$name" | sed 's/[[:space:]]*$//')"
+            if [ -z "$name" ]; then
+              echo "::error::branches.txt 里有一行没有分支名"
+              exit 1
+            fi
+            if ! git ls-remote --exit-code "https://github.com/$FORK" \
+              "refs/heads/$name" >/dev/null; then
+              echo "::error::$name 在 fork 上不存在；integrate 会取不到它"
+              exit 1
+            fi
+            echo "ok $name"
+          done < <(grep -v '^[[:space:]]*#' nixpkgs-ci/branches.txt \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
