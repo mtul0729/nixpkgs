@@ -185,11 +185,14 @@ gh run view <id> -R mtul0729/nixpkgs --log --job=<job id>
 ```
 
 In `update` look for `branches: ...`, `updatable: [...]`, and `<pkg>: already at
-<version>` or `pushed <pkg>: <old> -> <new>`. Hundreds of entries in `updatable` mean the
-branch-base rule above was violated — stop and fix the branch. In `review` the package
-must appear under `this derivation will be built:`; a package missing from that list is a
-silent eval failure, not a success. A green run does not prove substitutability: compare
-the store path's `.narinfo` on `mtul.cachix.org`.
+<version>` or `candidate <pkg>: <old> -> <new>`. Hundreds of entries in `updatable`
+mean the branch-base rule above was violated — stop and fix the branch. `update` only
+pushes to `ci/<branch>`; the branch itself moves in `verify`, and a `verify` leg that
+failed leaves it untouched. In `verify` the package must appear under
+`this derivation will be built:`; a package missing from that list is a silent eval
+failure, not a success. `integrate` then builds the attributes the branches name, so a
+package that is only ever substituted will not show up there either. A green run does not
+prove substitutability: compare the store path's `.narinfo` on `mtul.cachix.org`.
 
 ## About this file
 
