@@ -1,0 +1,19 @@
+diff --git a/internal/gui/bus_linux.go b/internal/gui/bus_linux.go
+--- a/internal/gui/bus_linux.go
++++ b/internal/gui/bus_linux.go
+@@ -28,6 +28,15 @@
+ 	if err != nil {
+ 		return
+ 	}
++	// COSMIC files the item under the sender's own name and keeps it when the
++	// well-known name is released, so registering again below adds a second
++	// icon beside the one it has instead of taking its place: two magpies in
++	// the panel. The item it already has is the right one, so leave it be.
++	var cosmic bool
++	if err := conn.BusObject().Call("org.freedesktop.DBus.NameHasOwner", 0,
++		"com.system76.CosmicStatusNotifierWatcher").Store(&cosmic); err == nil && cosmic {
++		return
++	}
+ 	name := fmt.Sprintf("org.kde.StatusNotifierItem-%d-1", os.Getpid())
+ 	// the tray takes it when the app has started, a moment after this
+ 	for range 120 {
