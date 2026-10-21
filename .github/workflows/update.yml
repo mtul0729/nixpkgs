@@ -8,6 +8,10 @@
 # 看到同一个 tree 直接跳过，不会每小时重试一个已知坏掉的版本。分支或包一旦被
 # 改动，tree 就变了，tag 不再匹配，自动重试。升级成功后清掉该分支的旧标记。
 #
+# 任何一条会让腿停下来的路径（升级失败、以前构建失败被标记、这次构建失败、推送
+# 被拒）都在 fork 上开一个 update-failed 的 issue，同一个标题只开一次、摘要没变就
+# 不重复评论；包推上去之后自动关掉。
+#
 # 手动触发：
 #   gh workflow run update.yml -R mtul0729/nixpkgs
 #   gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/helix
@@ -32,6 +36,9 @@ on:
 
 permissions:
   contents: write
+  # 包推不动的时候要在 fork 上开/更新 issue —— 日志里的 annotation 通知不到任何
+  # 人（job 还是绿的，GitHub 不发邮件），issue 是这条腿上唯一能说话的通道。
+  issues: write
 
 concurrency:
   group: update
@@ -112,13 +119,17 @@ jobs:
           name: mtul
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-      - name: Install nix-update
-        run: nix profile install nixpkgs#nix-update
+      # `--format` 是到 PATH 里找 `nixfmt` 的，nix-update 自己不带：不装的话每个
+      # 包都以 FileNotFoundError 收场，然后被当成「升级失败，跳过」。nixfmt-rs 提供
+      # 的可执行文件就叫 nixfmt，输出和 Haskell 原版逐字节相同。
+      - name: Install nix-update and nixfmt
+        run: nix profile install nixpkgs#nix-update nixpkgs#nixfmt-rs
 
       - name: Upgrade and verify ${{ matrix.branch }}
         env:
           NIX_PATH: nixpkgs=${{ github.workspace }}/nixpkgs
           TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ matrix.branch }}
           VERIFY_ONLY: ${{ inputs.verify_only }}
         run: |
@@ -163,6 +174,53 @@ jobs:
           fi
 
           FORK_URL="https://x-access-token:$TOKEN@github.com/$FORK.git"
+          RUN_URL="$GITHUB_SERVER_URL/$FORK/actions/runs/$GITHUB_RUN_ID"
+
+          # 日志里的 ::warning:: 不会通知到任何人：job 退出码还是 0，这一轮是绿的，
+          # GitHub 只在 run 失败时发信。所以凡是会让这条腿停下来的路径，都在 fork
+          # 上开一个 update-failed 的 issue：同一个标题只开一个，摘要没变就不重复
+          # 评论（否则同一个问题每小时一条评论），包推上去之后自动关掉。
+          gh label create update-failed -R "$FORK" \
+            -d "更新 bot 推不动这个包" -c d73a4a >/dev/null 2>&1 || true
+
+          # notify <标题> <摘要>：日志链接放在 <!-- run-link --> 之后，比的时候只
+          # 看前面的摘要，所以链接变化不等于新问题。
+          notify() {
+            local title="$1" summary="$2" body num last
+            body="$summary"$'\n\n'"<!-- run-link -->"$'\n'"日志：$RUN_URL"
+            export TITLE="$title"
+            # gh 抽一下风不该把这一轮的包一起拖死：查不到就当没有，写不进去也只
+            # 剩日志里的 annotation（每个调用点自己在前面打过了）。
+            num=$(gh issue list -R "$FORK" --label update-failed --state open --limit 100 \
+              --json number,title \
+              --jq '[.[] | select(.title == env.TITLE) | .number][0] // empty' || true)
+            if [ -z "$num" ]; then
+              gh issue create -R "$FORK" --label update-failed \
+                --title "$title" --body "$body" >/dev/null \
+                || echo "::warning::$BRANCH: 这个包通知失败了：issue 没开出来"
+            else
+              last=$(gh issue view "$num" -R "$FORK" --json body,comments \
+                --jq '((.comments[-1].body // .body // "") | split("<!-- run-link -->")[0] | sub("\\n+$"; ""))' || true)
+              if [ "$last" != "$summary" ]; then
+                gh issue comment "$num" -R "$FORK" --body "$body" >/dev/null \
+                  || echo "::warning::$BRANCH: 这个包通知失败了：issue #$num 没写进去"
+              fi
+            fi
+            return 0
+          }
+
+          # 推上去了，之前挂在 <branch>: <pkg> 上的 issue 可以关了。
+          close_issues() {
+            local pkg="$1" comment="$2" n
+            export TITLE_PREFIX="$BRANCH: $pkg"
+            for n in $(gh issue list -R "$FORK" --label update-failed --state open --limit 100 \
+              --json number,title \
+              --jq '[.[] | select(.title | startswith(env.TITLE_PREFIX)) | .number][]' || true); do
+              gh issue close "$n" -R "$FORK" --comment "$comment" >/dev/null \
+                || echo "::warning::$BRANCH: issue #$n 没关掉"
+            done
+            return 0
+          }
 
           # 两条判据，和 pkgs/README.md 里加包的流程一致：IFD 关掉能出 drv，
           # 然后真的构建（测试一起跑）。构建产物直接进 mtul。
@@ -195,8 +253,14 @@ jobs:
           for pkg in $(jq -r '.[]' <<< "$updatable"); do
             old=$(nix-instantiate --eval --raw -A "$pkg.version")
             before=$(git rev-parse HEAD)
-            if ! nix-update -u "$pkg" --format; then
+            if ! out=$(nix-update -u "$pkg" --format 2>&1); then
+              echo "$out"
               echo "::warning::$BRANCH: $pkg 升级失败，跳过"
+              notify "$BRANCH: $pkg 升级失败" \
+                "$(printf '%s\n\n%s\n\n```\n%s\n```' \
+                  "\`$pkg\` 停在 $old：\`nix-update\` 失败了，这一轮没有往 \`$BRANCH\` 推任何东西。" \
+                  "\`nix-update\` 的输出尾部：" \
+                  "$(printf '%s' "$out" | tail -15)")"
               git reset -q --hard "$before"
               continue
             fi
@@ -211,11 +275,15 @@ jobs:
             # 这个 tree 已经试过并失败，不再重试；分支或包一变 tree 就变。
             if git ls-remote --exit-code "$FORK_URL" "refs/tags/$tag" >/dev/null 2>&1; then
               echo "::warning::$pkg $new 上次构建失败过（$tag），跳过"
+              notify "$BRANCH: $pkg 上次构建失败，暂时跳过" \
+                "\`$pkg\` 停在 $old：$new 上次构建没过，打上了 \`$tag\`，tree 不变之前每轮都跳过。"$'\n\n'"想让它重新转起来有两条路：改这个包（tree 一变就自动重试），或者删掉 \`$tag\`。"
               git reset -q --hard "$before"
               continue
             fi
             if ! verify "$pkg"; then
               echo "::warning::$BRANCH: $pkg $new 构建失败，标记后跳过"
+              notify "$BRANCH: $pkg $new 构建失败" \
+                "\`$pkg\` $old -> $new 没有构建过，已经标成 \`$tag\`：同样的内容不会重试第二次。"$'\n\n'"构建输出在这一轮的日志里。要在同一个版本上再来一次，先删掉 \`$tag\`。"
               git tag -f "$tag" "refs/remotes/fork/$BRANCH"
               git push -f "$FORK_URL" "refs/tags/$tag" || true
               git reset -q --hard "$before"
@@ -224,6 +292,7 @@ jobs:
             git commit -q -m "$pkg: $old -> $new"
             if git push "$FORK_URL" "HEAD:refs/heads/$BRANCH"; then
               echo "pushed $pkg: $old -> $new"
+              close_issues "$pkg" "\`$pkg\` 已经推到 $new。"
               # 这个分支以前的失败标记已经没意义了。
               for t in $(git ls-remote --tags "$FORK_URL" "refs/tags/ci-failed/$BRANCH/*" \
                 | awk '{print $2}' | sed 's|^refs/tags/||'); do
@@ -231,6 +300,7 @@ jobs:
               done
             else
               echo "::warning::$BRANCH: 推送失败（分支刚被改过），这次跳过"
+              notify "$BRANCH: $pkg 推送被拒" "\`$pkg\` $old -> $new 验过了，但推不上去：\`$BRANCH\` 刚被改过（多半是人推的）。改动已回滚，下一轮重来。"
               git reset -q --hard "$before"
             fi
           done
