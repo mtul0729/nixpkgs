@@ -30,6 +30,9 @@ stdenv.mkDerivation (finalAttrs: {
   pname = if enableLocalAsr then "fcitx5-vinput" else "fcitx5-vinput-lite";
   version = "2.4.2";
 
+  # Required for new packages in pkgs/by-name (nixpkgs-vet).
+  __structuredAttrs = true;
+
   src = fetchFromGitHub {
     owner = "xifan2333";
     repo = "fcitx5-vinput";
@@ -107,6 +110,7 @@ stdenv.mkDerivation (finalAttrs: {
         "Voice input addon for Fcitx5, built without local ASR";
     homepage = "https://github.com/xifan2333/fcitx5-vinput";
     license = lib.licenses.gpl3Only;
+    maintainers = with lib.maintainers; [ myul ];
     platforms = lib.platforms.linux;
     mainProgram = "vinput";
   };
