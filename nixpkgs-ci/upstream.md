@@ -26,6 +26,19 @@ inputs the human provides; what is decided here is the procedure.
 - **Verify before asserting.** Facts about upstream (tags, versions, who opened a PR, whether a
   file exists) come from `gh`, not from memory. Build URLs from a sha or ref that was checked,
   never by assembling one by hand — a guessed sha 404s.
+- **Edit a PR body or a comment from the live copy, never from a draft or from memory.**
+  Fetch it first, edit the file, send it back:
+
+  ```bash
+  gh pr view <n> --repo NixOS/nixpkgs --json body --jq .body > /tmp/body.md
+  $EDITOR /tmp/body.md
+  gh pr edit <n> --repo NixOS/nixpkgs --body-file /tmp/body.md
+  ```
+
+  A local draft diverges the moment either side changes, and a body rewritten from memory drifts
+  in ways nobody can see in the diff — sections disappear, wording changes meaning, checkboxes
+  get reset. The GitHub copy is the only source of truth; a comment is the same, fetched with
+  `gh api repos/NixOS/nixpkgs/issues/comments/<id> --jq .body`.
 - **State what was actually observed** — version, platform, session. Saying where and on what
   version something was seen tells the reader both why it matters and when it may no longer
   apply. Check the number right before sending: the update bot moves branches, so a version
