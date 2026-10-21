@@ -206,8 +206,8 @@ cherry-pick) — it produces the wrong shape in this repo. Two rules:
   means "what this branch adds over its base" and follows fetches; a copied commit id like
   `09063bd1` is a frozen position that goes stale.
 - **Look syntax up, do not recall it.** jj moves fast: `jj <cmd> --help` and
-  `jj help -k revsets|glossary|bookmarks|config` are the authority. The gotchas that have bitten
-  us are collected in [`nixpkgs-ci/opening-prs.md`](./nixpkgs-ci/opening-prs.md#jj-gotchas).
+  `jj help -k revsets|glossary|bookmarks|config` are the authority, and a flag that existed in one
+  version is gone in the next.
 
 ## Verifying a run
 
