@@ -13,6 +13,12 @@ inputs the human provides; what is decided here is the procedure.
   does not satisfy it.
 - **A responsible person reviews before anything is sent.** Nothing goes out — not a draft PR,
   not a comment — before the human has read it.
+- **Check the conventions and the corpus before proposing.** A package that does something no
+  other package does gets asked about it in review, and the odd part is usually a
+  misdiagnosis. Read `doc/hooks/` and `doc/languages-frameworks/`, and grep `pkgs/by-name`
+  for packages of the same kind. Doing it before opening the PR costs less than doing it after
+  a reviewer asks — and it is the same check that should have happened when the package was
+  written.
 - **Verify before asserting.** Facts about upstream (tags, versions, who opened a PR, whether a
   file exists) come from `gh`, not from memory. Build URLs from a sha or ref that was checked,
   never by assembling one by hand — a guessed sha 404s.
