@@ -153,6 +153,10 @@ jj log -r 'master@upstream..<copy>' -T 'separate(" ", commit_id.short(), author.
 - Build it, and run the binaries from `./result/bin`, with sandboxing enabled.
 - Dependent packages and the other platforms: `gh workflow run review.yml -R
   mtul0729/nixpkgs-review-gha -f pr=<n>`, limited to what `meta.platforms` claims.
+- **Read the comment it posts, not the run's status.** The workflow goes green even when a package
+  fails to build: the result lives in the `nixpkgs-review` comment on the PR, and a green check
+  only means the workflow finished. A dependency can also be the thing that fails — check which
+  derivation the error names before blaming the package.
 - If something does not build, leave the branch alone and report it. Never disable a check to
   make CI green.
 
