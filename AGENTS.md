@@ -137,6 +137,17 @@ Read both before starting.
 2. Declare `passthru.updateScript = nix-update-script { ... };`, or the bot ignores the
    package forever. `extraArgs` only when the feed needs it: `--version-regex` for tag
    lists polluted with non-version tags, `--version=branch=<branch>` for commit tracking.
+
+   **Do not bump the version by hand.** Push the branch with the update script and let
+   `update.yml` do it: the bot runs `nix-update` against the `nixos-unstable` it is about to
+   build on, and only pushes what it built. A hash computed locally against an older base can
+   mismatch once upstream moves — a cargo update changes the vendor staging hash, and the build
+   then fails on a value nobody touched.
+
+   The exception is a bump that also changes how the package is built — a new dependency, a
+   different build system, a patch that has to be regenerated. The bot cannot make that edit, so
+   the change is hand-made; then compute the hashes on the base CI will use (fetch
+   `nixos-unstable` first and rebase onto it), not on whatever the checkout happened to be at.
 3. Verify, all three:
 
    ```bash
