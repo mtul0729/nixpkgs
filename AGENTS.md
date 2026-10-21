@@ -22,6 +22,23 @@ mechanism exists. The same goes for tool behaviour: read `--help` or the source 
 assuming. `nix-update`'s inability to bump a path-based `src` was established that way,
 after two wrong guesses.
 
+The same rule covers **how a package is built**, not only how it is structured:
+
+- `doc/hooks/` — every setup hook documents the phases it already provides in
+  `<name>.section.md`, with the implementation in the `hook.sh` beside it. A hand-written
+  `installPhase` usually means the hook's own install step was missed or pointed at the wrong
+  directory, not that the hook is broken.
+- `doc/languages-frameworks/` — the conventions for each ecosystem.
+- **Compare with the corpus before concluding that something is impossible.**
+
+  ```bash
+  grep -rl '<hook or framework>' pkgs/by-name --include=package.nix
+  ```
+
+  A trick that no other package uses is evidence the diagnosis is wrong, not that everyone
+  else missed it. Run this check when the package is written, and run it again before it is
+  proposed upstream.
+
 ## Invariants
 
 - `master` carries only CI files and documentation, never package code. It may hold
