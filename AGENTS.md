@@ -95,13 +95,16 @@ Any extra files the branch needs (an alias removed from `pkgs/top-level/aliases.
 patch) must be added to the index the same way — copying only `pkgs/by-name/...` silently
 drops them. `magpie` needs upstream's throw-alias for the removed magnifier deleted.
 
-## Opening an upstream PR
+## Talking to upstream
 
 `pkg/*` branches carry packages — they feed CI and sysadmin, they are not PR vehicles. Do not
 push `pkg/*` as the PR branch and do not rebase it onto `upstream/master`: build a copy and push
-that. The procedure — what goes in one PR, which base branch, whose identity the commit carries,
-the `Assisted-by:` trailer upstream's automation policy requires, verification, submission — is in
-[`nixpkgs-ci/opening-prs.md`](./nixpkgs-ci/opening-prs.md). Read it before starting.
+that.
+
+Upstream is not only PRs — comments on other people's PRs and issues are part of it, and they
+carry the same disclosure requirements as a commit. Search before any of them. The procedure —
+opening a PR, coordinating on someone else's, issues — is in
+[`nixpkgs-ci/upstream.md`](./nixpkgs-ci/upstream.md). Read it before starting.
 
 ## Adding or changing a package
 
@@ -154,7 +157,7 @@ git push --force-with-lease=refs/heads/<branch>:<old sha> \
 - **Never disable a check to make CI green.** If a package does not build, leave the
   branch untouched and report it.
 - **Never turn a `pkg/*` branch into the PR branch** — not by pushing it as-is, not by
-  rebasing it onto `upstream/master`. Build a copy (see *Opening an upstream PR*).
+  rebasing it onto `upstream/master`. Build a copy (see *Talking to upstream*).
 
 ## Changing a package's shape is the last resort
 
