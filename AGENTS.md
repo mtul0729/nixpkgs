@@ -95,6 +95,14 @@ Any extra files the branch needs (an alias removed from `pkgs/top-level/aliases.
 patch) must be added to the index the same way — copying only `pkgs/by-name/...` silently
 drops them. `magpie` needs upstream's throw-alias for the removed magnifier deleted.
 
+## Opening an upstream PR
+
+`pkg/*` branches carry packages — they feed CI and sysadmin, they are not PR vehicles. Do not
+push `pkg/*` as the PR branch and do not rebase it onto `upstream/master`: build a copy and push
+that. The procedure — what goes in one PR, which base branch, whose identity the commit carries,
+the `Assisted-by:` trailer upstream's automation policy requires, verification, submission — is in
+[`nixpkgs-ci/opening-prs.md`](./nixpkgs-ci/opening-prs.md). Read it before starting.
+
 ## Adding or changing a package
 
 1. Start from `nixos-unstable@upstream` and add only `pkgs/by-name/<shard>/<name>/`
@@ -145,6 +153,8 @@ git push --force-with-lease=refs/heads/<branch>:<old sha> \
   needs `PUSH_TOKEN`.
 - **Never disable a check to make CI green.** If a package does not build, leave the
   branch untouched and report it.
+- **Never turn a `pkg/*` branch into the PR branch** — not by pushing it as-is, not by
+  rebasing it onto `upstream/master`. Build a copy (see *Opening an upstream PR*).
 
 ## Changing a package's shape is the last resort
 
@@ -186,6 +196,18 @@ PR, it is probably the wrong change for the fork too.
 - Do not clone the repository. If you genuinely need a working tree, `jj workspace add`
   it, and `jj workspace forget <name>` plus delete the directory afterwards — leftover
   workspaces clutter `jj log`.
+
+## Working with jj (not git)
+
+Branches, commits and pushes go through jj. Do not reach for the git equivalent (new branch +
+cherry-pick) — it produces the wrong shape in this repo. Two rules:
+
+- **Express intent as a revset before hunting for a sha.** `nixos-unstable@upstream..pkg/<name>`
+  means "what this branch adds over its base" and follows fetches; a copied commit id like
+  `09063bd1` is a frozen position that goes stale.
+- **Look syntax up, do not recall it.** jj moves fast: `jj <cmd> --help` and
+  `jj help -k revsets|glossary|bookmarks|config` are the authority. The gotchas that have bitten
+  us are collected in [`nixpkgs-ci/opening-prs.md`](./nixpkgs-ci/opening-prs.md#jj-gotchas).
 
 ## Verifying a run
 
