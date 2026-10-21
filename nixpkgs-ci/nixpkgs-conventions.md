@@ -34,6 +34,14 @@ has to catch it.
   reports them one at a time, so fixing the first does not mean the second is not coming. Some
   builders already set `strictDeps` (`buildRustPackage` does, which is why dashbeam passed with
   only the first one); plain `mkDerivation` sets neither.
+
+  What they change, so the rule is not cargo-culted: `__structuredAttrs` passes the attributes to
+  the builder as JSON instead of flattening them into environment variables, so lists stay lists
+  and values containing spaces survive. `strictDeps` stops target-platform dependencies from
+  being visible at build time; without it they are, which is why a tool in the wrong input list
+  silently works and why cross builds break. Both default to off for a native build
+  (`make-derivation.nix:355`), so turning them on can break a package that came to rely on the
+  old behaviour — rebuild after adding them, do not assume.
 - **No import-from-derivation.** `[review]`, and `nixpkgs-review` drops such packages silently,
   so the failure looks like success.
 - **No network at build time.** Everything has to arrive through a nixpkgs fetcher. `[CI]`: the
