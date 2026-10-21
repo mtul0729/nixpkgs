@@ -30,8 +30,10 @@ has to catch it.
 - **Path and naming.** `pkgs/by-name/<two-letter-lower-prefix>/<attr-name>/package.nix`; the
   directory name is the attribute name. Do **not** add it to `all-packages.nix`; split files
   only inside its own directory; only top-level, `callPackage`-able packages live here. `[vet]`
-- **New packages set `__structuredAttrs = true;`.** `[vet]` — this is the check that failed our
-  first dashbeam PR.
+- **New packages set `__structuredAttrs = true;` and `strictDeps = true;`.** `[vet]` — and it
+  reports them one at a time, so fixing the first does not mean the second is not coming. Some
+  builders already set `strictDeps` (`buildRustPackage` does, which is why dashbeam passed with
+  only the first one); plain `mkDerivation` sets neither.
 - **No import-from-derivation.** `[review]`, and `nixpkgs-review` drops such packages silently,
   so the failure looks like success.
 - **No network at build time.** Everything has to arrive through a nixpkgs fetcher. `[CI]`: the
