@@ -231,6 +231,10 @@ cherry-pick) — it produces the wrong shape in this repo. Two rules:
 - **Express intent as a revset before hunting for a sha.** `nixos-unstable@upstream..pkg/<name>`
   means "what this branch adds over its base" and follows fetches; a copied commit id like
   `09063bd1` is a frozen position that goes stale.
+- **Pushing.** `jj git push --named <name>` needs the `NAME=REVISION` form — `--named
+  pr/<pkg>-<ver>=@`; a bare name is an error. To push an existing branch, use `-b <bookmark>`, and
+  if that branch exists on the remote but is not tracked locally, jj refuses with `Non-tracking
+  remote bookmark <branch>@origin exists`: `jj bookmark track <branch>@origin` first, then `-b`.
 - **Use jj wherever jj can do the job; reach for `git` only for what it genuinely cannot do.**
   Mixing them is what makes jj's remote view stale: after a `git push`, `jj git push` refuses
   with `references unexpectedly moved on the remote (reason: stale info)` until a
