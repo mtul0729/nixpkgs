@@ -95,9 +95,13 @@ CI 第一版就是这么红的，一秒就失败，不用等构建。
 
 ## 状态
 
-- fork 分支 `pkg/audacious`：`2d130824` 起带 `-Dgtk=true` + `wrapGAppsHook3`
-- 待实测：系统切到这份构建后，GTK 界面点 File → Open Files 应当正常弹出对话框
-- 上游 PR：搁置。要开时还需要
+- fork 分支 `pkg/audacious`（`2d130824` 带 `-Dgtk=true` + `wrapGAppsHook3`）**2026-10-21 撤掉**：
+  不打算维护 GTK 版本，直接用 nixpkgs 的 Qt-only 构建
+- 上游 PR：**不提了**。理由不是「上游放弃了 GTK」—— 实测证明它 2026 年还在修 —— 而是
+  **收益配不上代价**：GTK 是二等、opt-in 的界面（4.0 起新功能只往 Qt 加，Playback History
+  4.5 只有 Qt、4.6 才补 GTK），代价却是 +1.72 MiB、两个包因 ABI 绑定必须同改、外加一个漏了
+  就让界面崩溃的 `wrapGAppsHook3`；issue #566392 开了一个月 0 条评论，维护者没接话
+- 若哪天要重开，下面这些仍然成立（要开时还需要）
   - `nixpkgs-review`（`meta.platforms = linux`，跑 x86_64-linux / aarch64-linux，不开 darwin）
   - release note：`doc/release-notes/rl-2611.section.md` 的 *Other Notable Changes* 加一条
   - AI 披露：commit 带 `Assisted-by:` trailer，PR 描述里单独再写一次（CONTRIBUTING.md 的
