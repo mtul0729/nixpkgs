@@ -199,6 +199,28 @@ sentence belongs in the body for that tick to be true.
 
 Link related issues, and leave it draft until the human has reviewed it.
 
+### While it waits
+
+A PR sitting with no reviewer is the normal state, not a failure. `9.needs: reviewer` together
+with `7.no default reviewers` only means nobody was assigned automatically.
+
+The ladder is in CONTRIBUTING.md (*I opened a PR, how do I get it merged?*):
+
+1. **Wait.** Weeks are normal; do not push just because progress is slower than you would like.
+2. **No activity for at least a week:** post in the channels kept for this — the current
+   "PRs ready for review" / "PRs already reviewed" thread in the [NixOS Discourse dev
+   category](https://discourse.nixos.org/c/dev/14). They rotate, so find the current one rather
+   than bookmarking an old link. Same purpose, synchronously: the Nixpkgs Review Requests Matrix
+   room (https://matrix.to/#/#review-requests:nixos.org). Or @-mention someone who knows the area
+   — for a package, the maintainers of the hook or framework package it uses.
+3. **Everything else failed:** the [PRs in
+   distress](https://discourse.nixos.org/t/prs-in-distress/3604) thread. Reserve it for after a
+   serious effort to reach several active committers.
+
+Anything posted there is a contribution as well and carries the disclosure sentence. A PR that
+was disclosed gets an `llm-assisted` label; the follow-ups still need the human in the loop, and
+they have to be able to answer questions about the change.
+
 ### After the merge
 
 - `jj bookmark delete` and `jj abandon` the copy.
