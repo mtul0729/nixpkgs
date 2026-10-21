@@ -34,6 +34,25 @@ branch cannot serve both. **Never push `pkg/*` itself as the PR branch, and neve
 
 ## 3. Before touching anything
 
+**Check whether someone is already proposing it.** A duplicate PR costs reviewer time for
+nothing:
+
+```bash
+gh search prs    --repo NixOS/nixpkgs <name> --state open
+gh search prs    --repo NixOS/nixpkgs <name> --state closed --limit 15
+gh search issues --repo NixOS/nixpkgs <name> --limit 15
+gh pr view <n> --repo NixOS/nixpkgs        # files, review state, when it last moved
+```
+
+- An **open** PR for the same package: do not open a competing one. Coordinate instead — comment
+  with what the fork learned, wait for it to land, or offer to take over if it stalls. Which one
+  is a human decision, and any comment posted there carries the disclosure below.
+- A **closed or rejected** one is worth reading: it usually says why, and the new PR has to answer
+  that.
+- Search for the **removal** too. A package upstream removed leaves a `throw` alias in
+  `pkgs/top-level/aliases.nix`, and the PR that brings it back has to delete that alias in the
+  same change.
+
 Upstream's *Automation/AI policy* (`CONTRIBUTING.md`) governs everything headed upstream:
 
 - **A responsible person must be in the loop** and must have reviewed the change before it is
