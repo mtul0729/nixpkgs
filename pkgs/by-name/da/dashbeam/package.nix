@@ -3,7 +3,6 @@
   fetchFromGitHub,
   rustPlatform,
   cargo-tauri,
-  dpkg,
   pkg-config,
   wrapGAppsHook3,
   nodejs_22,
@@ -36,7 +35,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
   };
 
   # The Cargo workspace lives in src-tauri/; engine/ is a path dependency of it.
+  # cargo-tauri.hook only points CARGO_TARGET_DIR at ./target when this is set,
+  # and its install step reads $targetDir/bundle/deb/*/data/usr -- without it the
+  # artifacts land in src-tauri/target and that glob matches nothing.
   cargoRoot = "src-tauri";
+  buildAndTestSubdir = finalAttrs.cargoRoot;
   cargoHash = "sha256-7g4LlSm+/FOgE0awN9HQ8AtPCk+UnVghWqDIGpuBLGA=";
 
   pnpmDeps = fetchPnpmDeps {
@@ -48,7 +51,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   nativeBuildInputs = [
     cargo-tauri.hook
-    dpkg
     pkg-config
     wrapGAppsHook3
     nodejs_22
@@ -97,25 +99,9 @@ rustPlatform.buildRustPackage (finalAttrs: {
     gappsWrapperArgs+=(--suffix LD_LIBRARY_PATH : "${lib.makeLibraryPath [ libayatana-appindicator ]}")
   '';
 
-  # cargo-tauri.hook's install phase expects tauri to leave an unpacked tree at
-  # bundle/deb/*/data/usr. Tauri 2 only keeps the packed .deb, so that glob
-  # matches nothing and the hook's `mv` fails. Unpack the bundle here instead;
-  # it carries the binary, the desktop entry and the icons tauri generated from
-  # tauri.conf.json.
-  installPhase = ''
-    runHook preInstall
-
-    mkdir -p $out
-    dpkg-deb -x src-tauri/target/*/release/bundle/deb/*.deb $out
-
-    # dpkg-deb keeps the package's absolute layout (usr/bin, usr/share, usr/lib);
-    # hoist it so the store path looks like any other package, and keep the
-    # relative lib/<product> resources next to bin/ where tauri expects them.
-    mv $out/usr/* $out/
-    rmdir $out/usr
-
-    # The bundle uses the product name ("DashBeam"); name the executable after
-    # pname instead and keep the desktop entry consistent with it.
+  # cargo-tauri.hook installs $targetDir/bundle/deb/*/data/usr into $out itself.
+  # Only the product name is left to fix: the bundle calls it "DashBeam".
+  postInstall = ''
     if [ -e $out/bin/DashBeam ]; then
       mv $out/bin/DashBeam $out/bin/dashbeam
     fi
@@ -130,8 +116,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
         mv "$dir/DashBeam.png" "$dir/dashbeam.png"
       fi
     done
-
-    runHook postInstall
   '';
 
   # The test suite starts real child processes and dials real iroh relays.
