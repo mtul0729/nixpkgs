@@ -60,6 +60,11 @@ has to catch it.
 - **Formatting.** nixfmt. `[CI]` (treefmt).
 - **Removals.** Delete the directory and the `all-packages.nix` entry, leave a `throw` alias
   with a date and a reason — and no release note; the alias is the note. `[review]`
+- **Comments explain this package, not the rules.** A comment earns its place by saying why *this*
+  package does something unusual: a patch, a flag, a workaround. "Required for new packages,
+  nixpkgs-vet checks it" is a rule — it lives in the documentation, it goes stale when the rule
+  changes, and to a reviewer it is noise. A comment that restates the code is the same.
+  `[review]`
 
 ## What a commit and a PR have to satisfy
 
