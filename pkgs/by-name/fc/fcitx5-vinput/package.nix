@@ -71,6 +71,10 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   cmakeFlags = [
+    # "bundled" copies the sherpa-onnx and onnxruntime libraries that find_library() located
+    # out of the store into $out/lib/fcitx5-vinput, and points the daemon's INSTALL_RPATH at
+    # that directory. "system" links against the store copies instead and installs nothing.
+    (lib.cmakeFeature "VINPUT_RUNTIME_MODE" "system")
     (lib.cmakeBool "VINPUT_ENABLE_LOCAL_ASR" enableLocalAsr)
     (lib.cmakeBool "VINPUT_FETCH_CLI11" false)
     (lib.cmakeBool "VINPUT_FETCH_NLOHMANN_JSON" false)
@@ -81,12 +85,6 @@ stdenv.mkDerivation (finalAttrs: {
     (lib.cmakeFeature "CMAKE_EXE_LINKER_FLAGS" "-fuse-ld=mold")
     (lib.cmakeFeature "CMAKE_SHARED_LINKER_FLAGS" "-fuse-ld=mold")
   ];
-
-  # Upstream ships a copy of onnxruntime next to the sherpa libraries; use the
-  # one from nixpkgs instead so it is shared and patched.
-  postInstall = lib.optionalString enableLocalAsr ''
-    rm -f $out/lib/fcitx5-vinput/libonnxruntime.so
-  '';
 
   # The command provider shells out to python3 and dlopens libopus. The Qt hook
   # leaves these binaries alone (the Qt code lives in the plugin .so), so wrap
