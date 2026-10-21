@@ -1,15 +1,83 @@
-# Opening upstream PRs from this fork
+# Upstream: PRs, comments and issues
 
-Scope: every pull request this fork sends to NixOS/nixpkgs — version bumps, packaging reworks,
-new packages, removals. What is decided here is the *procedure*; which packages go through it and
-how each change is split are inputs the human provides.
+Scope: everything this fork sends to NixOS/nixpkgs — pull requests, comments and reviews on
+other people's PRs, and issues. Which package goes through it and how a change is split are
+inputs the human provides; what is decided here is the procedure.
+
+## Ground rules
+
+- **Disclosure covers every kind of contribution.** Upstream's *Automation/AI policy*
+  (`CONTRIBUTING.md`) applies to commits, PR summaries, comments, reviews and issues alike. A
+  commit carries an `Assisted-by:` trailer; everything else — PR body, comment, review, issue —
+  carries a sentence naming the tool and the primary model, name and version. `Co-authored-by:`
+  does not satisfy it.
+- **A responsible person reviews before anything is sent.** Nothing goes out — not a draft PR,
+  not a comment — before the human has read it.
+- **Verify before asserting.** Facts about upstream (tags, versions, who opened a PR, whether a
+  file exists) come from `gh`, not from memory. Build URLs from a sha or ref that was checked,
+  never by assembling one by hand — a guessed sha 404s.
+- **State what was actually observed** — version, platform, session. Saying where and on what
+  version something was seen tells the reader both why it matters and when it may no longer
+  apply. Check the number right before sending: the update bot moves branches, so a version
+  quoted from an hour ago can already be stale.
+- **Exempt:** `nix-update`, r-ryantm, the CI bots and other maintainer-approved bots. AI used
+  only for research, testing or debugging is out of scope as long as none of its output lands in
+  the contribution.
+
+## 1. Search first
+
+Whatever the form — PR, comment or issue — look for existing work before adding to it. A
+duplicate costs reviewer time for nothing:
+
+```bash
+gh search prs    --repo NixOS/nixpkgs <name> --state open
+gh search prs    --repo NixOS/nixpkgs <name> --state closed --limit 15
+gh search issues --repo NixOS/nixpkgs <name> --limit 15
+gh pr view <n> --repo NixOS/nixpkgs        # files, review state, when it last moved
+```
+
+- An **open** PR for the same package: do not open a competing one. Go to §2 instead.
+- A **closed or rejected** one is worth reading: it usually says why, and the new contribution
+  has to answer that.
+- Search for the **removal** too. A package upstream removed leaves a `throw` alias in
+  `pkgs/top-level/aliases.nix`, and the PR that removed it usually holds the discussion.
+
+## 2. Commenting on someone else's PR
+
+Coordinating is the normal outcome of a search, not a consolation prize. What to bring:
+
+- What the fork measured that they could not have: a failure on a platform they do not test, a
+  first-run side effect, a fetcher or update-script trap. One item per paragraph, each with what
+  it was observed on.
+- Read their diff before claiming a gap. If they already do the thing, say so — "worth keeping,
+  and here is why" — and raise only the delta actually found. A requirement written as though it
+  were missing reads as noise to the author who has it.
+- Frame it as an observation plus an offer to test — unless the reasoning is settled, in which
+  case say so plainly. Do not hedge a recommendation with a justification that does not apply in
+  nixpkgs: dependencies are never the constraint there, so "older distributions" is not a reason
+  to choose an older toolkit or an older API.
+- Link the fork's work as a **compare view** (`<base>...<head>`, both shas) rather than a blob:
+  it shows the whole change, and pinning it to a sha keeps it still after the update bot moves
+  the branch.
+- End with the disclosure sentence.
+
+## 3. Issues
+
+- Search before opening one (§1). An issue is the right form when there is nothing to propose
+  yet but something to establish — whether upstream wants a thing at all.
+- **Close an issue we opened when we decide not to pursue it**, and leave what was learned in
+  the closing comment. Something we do not intend to drive should not sit in upstream's list;
+  the record still has value to whoever picks it up later. This is the default, not a special
+  case.
+
+## 4. Opening a PR
 
 `pkg/*` branches carry packages. They feed CI and sysadmin; they are not PR vehicles. The two
 purposes want different bases — CI needs `nixos-unstable`, a PR needs `upstream/master` — so one
 branch cannot serve both. **Never push `pkg/*` itself as the PR branch, and never rebase it onto
 `upstream/master`.** Build a copy, push the copy.
 
-## 1. Decide what one PR contains
+### Decide what one PR contains
 
 - One logical unit per PR, one commit per logical unit.
 - Splitting rule of thumb: changes that are *required to make a new version build or run* belong
@@ -20,7 +88,7 @@ branch cannot serve both. **Never push `pkg/*` itself as the PR branch, and neve
 - A branch that carries several units still goes out as one PR when the human says so; the commit
   body then has to account for each one.
 
-## 2. Pick the base branch
+### Pick the base branch
 
 - `master` by default.
 - `staging` when the change causes a mass rebuild — ofborg's rebuild labels are the signal, 500+
@@ -32,41 +100,7 @@ branch cannot serve both. **Never push `pkg/*` itself as the PR branch, and neve
 - Backporting to a release branch is a separate step *after* the merge, and only for changes
   acceptable for releases (CONTRIBUTING.md, *Changes acceptable for releases*).
 
-## 3. Before touching anything
-
-**Check whether someone is already proposing it.** A duplicate PR costs reviewer time for
-nothing:
-
-```bash
-gh search prs    --repo NixOS/nixpkgs <name> --state open
-gh search prs    --repo NixOS/nixpkgs <name> --state closed --limit 15
-gh search issues --repo NixOS/nixpkgs <name> --limit 15
-gh pr view <n> --repo NixOS/nixpkgs        # files, review state, when it last moved
-```
-
-- An **open** PR for the same package: do not open a competing one. Coordinate instead — comment
-  with what the fork learned, wait for it to land, or offer to take over if it stalls. Which one
-  is a human decision, and any comment posted there carries the disclosure below.
-- A **closed or rejected** one is worth reading: it usually says why, and the new PR has to answer
-  that.
-- Search for the **removal** too. A package upstream removed leaves a `throw` alias in
-  `pkgs/top-level/aliases.nix`, and the PR that brings it back has to delete that alias in the
-  same change.
-
-Upstream's *Automation/AI policy* (`CONTRIBUTING.md`) governs everything headed upstream:
-
-- **A responsible person must be in the loop** and must have reviewed the change before it is
-  submitted. No PR goes out — not even a draft — before the human has read the diff.
-- **Non-trivial automation must be disclosed.** For LLM tooling used on commits that means an
-  `Assisted-by:` trailer naming at least the tool and the primary model, name and version.
-  `Co-authored-by:` does not satisfy the policy.
-- **The PR summary discloses separately** — the commit trailer does not cover it — and so does
-  every later comment or review posted on the PR.
-- **Exempt:** `nix-update`, r-ryantm, the CI bots and other maintainer-approved bots. AI used
-  only for research, testing or debugging is out of scope as long as none of its output lands in
-  the commit.
-
-## 4. Build the copy
+### Build the copy
 
 ```bash
 jj git fetch --remote upstream --branch master   # upstream fetch is pinned to nixos-unstable; -b overrides it
@@ -103,7 +137,7 @@ jj log -r 'master@upstream..<copy>' -T 'separate(" ", commit_id.short(), author.
                                           # complete history, and a human author
 ```
 
-## 5. Verify before pushing
+### Verify before pushing
 
 - Formatting: `nix fmt` — CI enforces nixfmt.
 - Evaluate without IFD: `nix-instantiate --eval --strict --option allow-import-from-derivation
@@ -115,7 +149,7 @@ jj log -r 'master@upstream..<copy>' -T 'separate(" ", commit_id.short(), author.
 - If something does not build, leave the branch alone and report it. Never disable a check to
   make CI green.
 
-## 6. The commit message
+### The commit message
 
 - Subject forms: version bump `<pkg>: <old> -> <new>`; new package `<pkg>: init at <version>`;
   anything else `<pkg>: <what>`. No trailing period.
@@ -133,7 +167,7 @@ Assisted-by: <tool> <version> (model <name>)
 Fill it in for whatever produced the change — the policy asks for the primary model name and
 version, not a generic label, so it has to match the run that actually did the work.
 
-## 7. Submit
+### Submit
 
 ```bash
 jj git push --named pr/<pkg>-<ver>=<copy> --remote origin
@@ -150,11 +184,10 @@ Prepared with <tool> <version> (model <name>); reviewed before submission.
 Fill the template checkboxes with what actually happened, link related issues, and leave it draft
 until the human has reviewed it.
 
-## 8. After the merge
+### After the merge
 
 - `jj bookmark delete` and `jj abandon` the copy.
 - Backport only if the human wants the change in a release.
 - `branches.txt`: leave it alone. Dropping the line afterwards is a human decision.
 - A green run does not prove substitutability — compare the store path's `.narinfo` on
   `mtul.cachix.org`.
-
