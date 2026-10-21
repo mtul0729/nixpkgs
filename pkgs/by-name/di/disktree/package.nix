@@ -19,14 +19,16 @@
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "disktree";
-  version = "0.11.0";
+  # PR #107 head, which sits on main after v0.11.0 — the patch does not apply to the tag.
+  version = "0.11.0-unstable-2026-10-15";
+
   __structuredAttrs = true;
 
   src = fetchFromGitHub {
     owner = "tobi";
     repo = "disktree";
-    tag = "v${finalAttrs.version}";
-    hash = "sha256-b7VP3VgOS+zUTR2bhOh6JNcN5mIIeHL/fe3u/eHC+X4=";
+    rev = "aae91c592b15a025f7c665195974eecce4ed241c";
+    hash = "sha256-kReob+bD3iymVl+GFuO6yU/dUj++/UDY9We90Z7Vpm4=";
   };
 
   cargoHash = "sha256-k+iLvOS+6o5oC+JcG9BJ3UUAzZAQpcpNelKCXsDx0Fw=";
