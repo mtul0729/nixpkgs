@@ -187,8 +187,19 @@ sentence is enough:
 Prepared with <tool> <version> (model <name>); reviewed before submission.
 ```
 
-Fill the template checkboxes with what actually happened, link related issues, and leave it draft
-until the human has reviewed it.
+Write the body **from upstream's PR template**, not in a format of our own:
+
+```bash
+gh api repos/NixOS/nixpkgs/contents/.github/PULL_REQUEST_TEMPLATE.md --jq .content | base64 -d
+```
+
+Keep its structure and its link definitions, put the summary where the comment asks for it, and
+tick only what actually happened — the template asks not to be removed even when nothing is
+checked, and an unticked box is information for the reviewer, not a failure. It carries a
+*Follows the automation/AI policy* checkbox of its own: ticking it is a claim, so the disclosure
+sentence belongs in the body for that tick to be true.
+
+Link related issues, and leave it draft until the human has reviewed it.
 
 ### After the merge
 
