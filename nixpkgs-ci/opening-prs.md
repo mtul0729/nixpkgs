@@ -15,7 +15,8 @@ branch cannot serve both. **Never push `pkg/*` itself as the PR branch, and neve
 - Splitting rule of thumb: changes that are *required to make a new version build or run* belong
   with the version bump; changes that stand on their own — offline assets, vendored data, closure
   shrinking, a rework of how the package is assembled — are separate PRs.
-- Whether to split is a human decision. The agent lays out the units, the human chooses.
+- Whether to split is a human decision. Whoever prepares the change lays out the units, the
+  human chooses.
 - A branch that carries several units still goes out as one PR when the human says so; the commit
   body then has to account for each one.
 
@@ -25,6 +26,9 @@ branch cannot serve both. **Never push `pkg/*` itself as the PR branch, and neve
 - `staging` when the change causes a mass rebuild — ofborg's rebuild labels are the signal, 500+
   is the rule of thumb and 1000+ means it belongs there.
 - Never target `staging-next`.
+- `nixos-unstable` and `master` are not rivals here: `nixos-unstable@upstream` is an ancestor of
+  `master@upstream` (`git merge-base --is-ancestor` proves it), so re-basing a fork change onto
+  master is a re-base, not a rewrite.
 - Backporting to a release branch is a separate step *after* the merge, and only for changes
   acceptable for releases (CONTRIBUTING.md, *Changes acceptable for releases*).
 
@@ -56,7 +60,9 @@ JJ_USER=<you> JJ_EMAIL=<you@example.com> jj metaedit -r <copy> --update-author -
 ```
 
 Duplicate the **range**, not the tip: `-r <tip>` drops earlier commits. Roots land on `--onto`
-and the rest stack in the original order, so history survives intact.
+and the rest stack in the original order, so history survives intact. Name the branch directly
+(`pkg/<name>`) rather than matching by pattern — most `pkg/*` branches live only on `origin`, so
+pattern matching needs `remote_bookmarks(glob:"pkg/*")`, which is what `revsets.log` uses.
 
 The author has to be the person who will stand behind the PR. `jj describe` cannot change it — it
 refreshes the committer and leaves the author alone — so use `jj metaedit`, which changes metadata
@@ -68,9 +74,9 @@ without touching content:
 - Add `--update-author-timestamp` only if the timestamp should move too; by default it is kept.
 - `-m` sets the message in the same call, so one `metaedit` fixes author and message together.
 - Skip the author flag entirely when the fork commit is already authored by the person submitting.
-- The copy is decoupled from the original: later bot pushes to `pkg/*` do not move the PR, and
-  work on the PR does not disturb what CI consumes.
-- Confirm the copy afterwards:
+
+The copy is decoupled from the original: later bot pushes to `pkg/*` do not move the PR, and work
+on the PR does not disturb what CI consumes. Confirm it afterwards:
 
 ```bash
 jj diff -r <copy> -s                      # complete change
@@ -133,16 +139,3 @@ until the human has reviewed it.
 - A green run does not prove substitutability — compare the store path's `.narinfo` on
   `mtul.cachix.org`.
 
-## jj gotchas
-
-- `-r` takes a **revset expression, not a glob**. A bare `pkg/*` fails with
-  `Revision "pkg/*" doesn't exist`. Match names with `bookmarks("pkg/*")` (local only) or
-  `remote_bookmarks(glob:"pkg/*")` — most `pkg/*` branches exist only on `origin`, which is why
-  `revsets.log` uses the latter.
-- **Inspect a change with `jj diff -r <change>`.** `--from A --to B` compares two whole trees and
-  lists everything that differs between master and nixos-unstable — that is not the PR diff.
-- **master and nixos-unstable do not diverge**: `nixos-unstable@upstream` is an ancestor of
-  `master@upstream` (`git merge-base --is-ancestor` proves it). A direct push would *not* produce
-  a diff of thousands of commits; decouple for the reasons above, not for that one.
-- Look syntax up rather than recalling it: `jj <cmd> --help`,
-  `jj help -k revsets|glossary|bookmarks|config`.
