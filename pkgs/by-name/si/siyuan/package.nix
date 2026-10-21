@@ -27,6 +27,8 @@
 let
   inherit (stdenv.hostPlatform) isLinux isDarwin system;
 
+  # Upstream pins pnpm@12 in app/package.json. fetchPnpmDeps cannot fetch pnpm 12's virtual
+  # store until fetcherVersion 5 lands (NixOS/nixpkgs#565315), so this builds with pnpm 11.
   pnpm = pnpm_11;
 
   # Upstream's app/package.json pins Electron 44; nixpkgs' default electron (43)
@@ -66,39 +68,39 @@ let
   hasOCR = ocrManifest != null;
 
   # Where upstream's prepare-ocr.py expects the runtime library, per platform.
-  ocrTarget = if hasOCR then {
-    "linux" = "linux-amd64";
-    "linux-arm64" = "linux-arm64";
-    "darwin-arm64" = "darwin-arm64";
-  }.${platformId} else null;
+  ocrTarget =
+    if hasOCR then
+      {
+        "linux" = "linux-amd64";
+        "linux-arm64" = "linux-arm64";
+        "darwin-arm64" = "darwin-arm64";
+      }
+      .${platformId}
+    else
+      null;
 
   # Model data files only (onnx weights and yml): loaded, never executed. The
   # prebuilt onnxruntime is not fetched — see dedupeOnnxruntime.
-  ocrModels = lib.optionals hasOCR (map (
-    entry:
-    {
+  ocrModels = lib.optionals hasOCR (
+    map (entry: {
       path = entry.path;
       file = fetchurl {
         url = entry.url;
         sha256 = entry.sha256;
       };
-    }
-  ) ocrManifest.models);
+    }) ocrManifest.models
+  );
 
   # Put every model where prepare-ocr.py's download() verifies it: matching bytes
   # skip the download, mismatches fail right there.
-  ocrModelCopies = lib.concatMapStringsSep "\n" (
-    m:
-    ''
-      mkdir -p "$(dirname "stage/ocr/models/${m.path}")"
-      cp -f ${m.file} "stage/ocr/models/${m.path}"
-    ''
-  ) ocrModels;
+  ocrModelCopies = lib.concatMapStringsSep "\n" (m: ''
+    mkdir -p "$(dirname "stage/ocr/models/${m.path}")"
+    cp -f ${m.file} "stage/ocr/models/${m.path}"
+  '') ocrModels;
 
   # What afterPack extracted is our placeholder; the kernel uses the Nix pandoc.
   # Replace the directory with a single store symlink.
-  dedupePandoc = resourcesDir:
-    ''
+  dedupePandoc = resourcesDir: ''
     rm -rf ${resourcesDir}/pandoc
     mkdir -p ${resourcesDir}/pandoc/bin
     ln -s ${lib.getExe pandoc} ${resourcesDir}/pandoc/bin/pandoc
@@ -108,8 +110,7 @@ let
   # (linux, subprocess) dlopen it from a fixed relative path through
   # OrtGetApiBase's C API, which is backwards compatible, so nixpkgs' newer
   # onnxruntime can serve a worker built against an older one.
-  dedupeOnnxruntime = resourcesDir:
-    ''
+  dedupeOnnxruntime = resourcesDir: ''
     ocrRuntimeDir=${resourcesDir}/stage/ocr/runtime/${ocrTarget}
     mkdir -p "$ocrRuntimeDir"
     ortLib=${lib.getLib onnxruntime}/lib/libonnxruntime.${if isDarwin then "dylib" else "so"}
@@ -251,8 +252,7 @@ stdenv.mkDerivation (finalAttrs: {
     # ocr-worker: the same command and output path as upstream's
     # prepare-ocr.py --build-worker, built offline in vendor mode.
     mkdir -p stage/ocr/runtime/${ocrTarget}
-    ${
-      lib.optionalString isLinux ''
+    ${lib.optionalString isLinux ''
       workerOut="$PWD/stage/ocr/runtime/${ocrTarget}/siyuan-ocr"
       (
         cd ocr-layout/kernel
@@ -260,8 +260,7 @@ stdenv.mkDerivation (finalAttrs: {
           GOCACHE="$PWD/../../.gocache" \
           go build -trimpath -ldflags="-s -w" -o "$workerOut" ./ocr/cmd/ocr-worker
       )
-    ''
-    }
+    ''}
 
     # Resources are in place, so the hook has nothing left to do.
     cat > scripts/beforePack.js <<'OCR_EOF'
