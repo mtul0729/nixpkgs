@@ -30,8 +30,10 @@ stdenv.mkDerivation (finalAttrs: {
   pname = if enableLocalAsr then "fcitx5-vinput" else "fcitx5-vinput-lite";
   version = "2.4.2";
 
-  # Required for new packages in pkgs/by-name (nixpkgs-vet).
+  # Both required for new packages in pkgs/by-name (nixpkgs-vet); mkDerivation sets
+  # neither, unlike the language builders.
   __structuredAttrs = true;
+  strictDeps = true;
 
   src = fetchFromGitHub {
     owner = "xifan2333";
