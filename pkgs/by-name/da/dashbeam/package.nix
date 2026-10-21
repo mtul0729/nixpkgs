@@ -27,7 +27,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
   pname = "dashbeam";
   version = "0.7.2";
 
-  # Required for new packages in pkgs/by-name (nixpkgs-vet).
   __structuredAttrs = true;
 
   src = fetchFromGitHub {
