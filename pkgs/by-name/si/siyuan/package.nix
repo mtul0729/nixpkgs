@@ -15,7 +15,6 @@
   makeWrapper,
   makeDesktopItem,
   copyDesktopItems,
-  nix-update-script,
   xdg-utils,
   zip,
   python3,
@@ -62,8 +61,8 @@ let
   # cannot do. ./ocr-assets.json is a verbatim copy of upstream's
   # scripts/ocr-assets.json for this version (null once a version ships no OCR),
   # so the models can be prefetched with fetchurl and the hook made a no-op.
-  # After a version bump that changes the models, regenerate it: prepare-ocr.py
-  # fails the build on a hash mismatch rather than silently skipping.
+  # update.sh refreshes it along with the version; prepare-ocr.py fails the build
+  # on a hash mismatch rather than silently skipping.
   ocrManifest = builtins.fromJSON (builtins.readFile ./ocr-assets.json);
   hasOCR = ocrManifest != null;
 
@@ -143,11 +142,6 @@ stdenv.mkDerivation (finalAttrs: {
         pandoc_path = lib.getExe pandoc;
       })
     ];
-
-    # No gulu workaround here: since v3.8.3 upstream copies with CopyWritable
-    # (siyuan-note/siyuan#19051), and the old substituteInPlace target
-    # (os.Chmod(dest, sourceinfo.Mode())) is gone — --replace-fail would fail
-    # the build. Do not bring the hack back.
 
     # Set flags and tags as per upstream's Dockerfile
     ldflags = [
@@ -333,13 +327,8 @@ stdenv.mkDerivation (finalAttrs: {
   passthru = {
     kernel = finalAttrs.kernel;
 
-    updateScript = nix-update-script {
-      extraArgs = [
-        "--version-regex"
-        "^v(\\d+\\.\\d+\\.\\d+)$"
-        "--subpackage=kernel"
-      ];
-    };
+    # Updates the version, the hashes and ocr-assets.json; see update.sh.
+    updateScript = ./update.sh;
 
     # Upstream kernel tests require model.Conf initialization, system fonts,
     # pandoc, and other assumptions that do not hold in the Nix sandbox during
