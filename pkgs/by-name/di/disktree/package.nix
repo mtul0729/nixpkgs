@@ -2,6 +2,7 @@
   lib,
   rustPlatform,
   fetchFromGitHub,
+  nix-update-script,
   pkg-config,
   desktop-file-utils,
   makeBinaryWrapper,
@@ -72,6 +73,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
     wrapProgram "$out/bin/disktree" \
       --prefix PATH : ${lib.makeBinPath [ gitMinimal ]}
   '';
+
+  passthru.updateScript = nix-update-script { };
 
   meta = {
     description = "Disk usage treemap for finding and removing files";
