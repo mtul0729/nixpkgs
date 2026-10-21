@@ -77,7 +77,7 @@ has to catch it.
 - **Maintainer entries.** The adding commit must be GPG-signed and the `githubId` must match the
   handle; GitHub's "Verified" badge is not enough. `[review]`
 
-## The three that cost us a round trip
+## The four that cost us a round trip
 
 All three were in the files above and were missed by not reading them:
 
@@ -85,8 +85,17 @@ All three were in the files above and were missed by not reading them:
    install step was pointed at the wrong directory (`buildAndTestSubdir` was unset).
 2. Nothing else in nixpkgs unpacked a `.deb` by hand: 70 packages use `cargo-tauri`, 0 use
    `dpkg-deb`. A trick nobody else uses is a diagnosis, not a technique.
-3. New by-name packages need `__structuredAttrs = true;`. nixpkgs-vet says so in one line.
+3. New by-name packages need `__structuredAttrs = true;` and `strictDeps = true;`. nixpkgs-vet
+   says so, one per run.
+4. Before working around what a build does, look for the switch upstream already has.
+   `fcitx5-vinput` copies the sherpa-onnx and onnxruntime libraries into `$out` because its
+   `VINPUT_RUNTIME_MODE` defaults to `bundled`; `system` is declared in the same CMakeLists
+   (`set_property(CACHE VINPUT_RUNTIME_MODE PROPERTY STRINGS system bundled)`). We installed and
+   then deleted them instead. The same file also carries `VINPUT_FETCH_CLI11` and
+   `VINPUT_FETCH_NLOHMANN_JSON`, which is how "no network at build time" is satisfied by
+   configuration rather than by patching.
 
-The general form of all three: **read `doc/hooks/` and grep `pkgs/by-name` for the same kind of
-package before concluding anything is impossible**, and check the by-name list before calling a
-package done.
+The general form of all four: **read the build system (`doc/hooks/`, the upstream CMake/Make
+file), grep `pkgs/by-name` for the same kind of package, and check the by-name list before
+calling a package done** — before concluding that anything is impossible, or that deleting it
+ afterwards is the way.
