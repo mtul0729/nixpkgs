@@ -16,6 +16,10 @@ Before proposing a structure change, an update mechanism or a CI workaround, rea
 - `doc/stdenv/passthru.chapter.md` — `passthru.updateScript` and the other passthru hooks
 - `doc/contributing/` — review and PR conventions
 
+`nixpkgs-ci/nixpkgs-conventions.md` is a summary of the ones above that we have actually needed,
+with pointers back to them. It is a map, not a substitute: when it and an upstream file disagree,
+the upstream file is right.
+
 If the documentation already covers the case, follow it. Do not invent a workaround around
 a tool's limitation — ours or upstream's — before checking whether the documented
 mechanism exists. The same goes for tool behaviour: read `--help` or the source instead of
@@ -121,7 +125,9 @@ that.
 Upstream is not only PRs — comments on other people's PRs and issues are part of it, and they
 carry the same disclosure requirements as a commit. Search before any of them. The procedure —
 opening a PR, coordinating on someone else's, issues — is in
-[`nixpkgs-ci/upstream.md`](./nixpkgs-ci/upstream.md). Read it before starting.
+[`nixpkgs-ci/upstream.md`](./nixpkgs-ci/upstream.md); what nixpkgs requires of the package and
+the commit itself is in [`nixpkgs-ci/nixpkgs-conventions.md`](./nixpkgs-ci/nixpkgs-conventions.md).
+Read both before starting.
 
 ## Adding or changing a package
 

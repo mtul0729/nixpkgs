@@ -1,7 +1,11 @@
 # Upstream: PRs, comments and issues
 
-Scope: everything this fork sends to NixOS/nixpkgs — pull requests, comments and reviews on
-other people's PRs, and issues. Which package goes through it and how a change is split are
+Scope: how this fork sends things to NixOS/nixpkgs — pull requests, comments and reviews on
+other people's PRs, and issues.
+
+What nixpkgs requires of a package, a commit or a branch is not here; it is summarised in
+[`nixpkgs-conventions.md`](./nixpkgs-conventions.md), with pointers to the upstream files that
+are authoritative. Which package goes through it and how a change is split are
 inputs the human provides; what is decided here is the procedure.
 
 ## Ground rules
@@ -96,15 +100,12 @@ branch cannot serve both. **Never push `pkg/*` itself as the PR branch, and neve
 
 ### Pick the base branch
 
-- `master` by default.
-- `staging` when the change causes a mass rebuild — ofborg's rebuild labels are the signal, 500+
-  is the rule of thumb and 1000+ means it belongs there.
+- Follow the decision tree in [`nixpkgs-conventions.md`](./nixpkgs-conventions.md) — `master`,
+  unless the rebuild count pushes it to `staging`.
 - Never target `staging-next`.
 - `nixos-unstable` and `master` are not rivals here: `nixos-unstable@upstream` is an ancestor of
   `master@upstream` (`git merge-base --is-ancestor` proves it), so re-basing a fork change onto
   master is a re-base, not a rewrite.
-- Backporting to a release branch is a separate step *after* the merge, and only for changes
-  acceptable for releases (CONTRIBUTING.md, *Changes acceptable for releases*).
 
 ### Build the copy
 
@@ -157,14 +158,11 @@ jj log -r 'master@upstream..<copy>' -T 'separate(" ", commit_id.short(), author.
 
 ### The commit message
 
-- Subject forms: version bump `<pkg>: <old> -> <new>`; new package `<pkg>: init at <version>`;
-  anything else `<pkg>: <what>`. No trailing period.
-- Body: why, not what. A bump names the attribute, both versions, and points at the changelog.
-- Adding yourself to `maintainer-list.nix` is its own commit — `maintainers: add <handle>` —
-  placed before the package commit.
+- Subject form, the no-trailing-period rule and the why in the body are nixpkgs rules — see
+  [`nixpkgs-conventions.md`](./nixpkgs-conventions.md).
 - Major or breaking package changes get an entry in `doc/release-notes`.
-- Then the trailer, unless the change came from an exempt bot. The policy requires the tool name
-  and the primary model name and version:
+- Then the part specific to this fork: unless the change came from an exempt bot, the commit has
+  to carry a trailer naming the tool and the primary model, name and version:
 
 ```
 Assisted-by: <tool> <version> (model <name>)
