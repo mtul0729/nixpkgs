@@ -49,7 +49,17 @@ Change it by appending:
 jj new master@origin -m "<what and why>"
 # edit
 jj git push -b master        # or: git push <sha>:refs/heads/master
+jj new                       # <- see the trap below; do this before any further edit
 ```
+
+A trap in that sequence: `jj describe` does not publish, and `jj git push` does not seal
+the change — `@` is still on it. An edit after the push rewrites the commit that is
+already on `master`, the next push reports `move sideways from <old> to <new>` instead of
+moving forward, and the change id starts rendering as `(divergent)`. It happened here:
+two rounds of follow-up edits went into a change already sitting on `master`, and
+`master` had to move sideways to take them. Run `jj new` right after pushing; whatever
+you spot later goes into its own commit, which is what the paragraph below asks for
+anyway.
 
 That is a fast-forward; no `--force`, no rewriting of earlier commits. CI rebases the
 whole stack onto the current `nixos-unstable` once an hour, so if upstream moved under
