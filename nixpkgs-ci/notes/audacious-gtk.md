@@ -101,6 +101,8 @@ CI 第一版就是这么红的，一秒就失败，不用等构建。
   **收益配不上代价**：GTK 是二等、opt-in 的界面（4.0 起新功能只往 Qt 加，Playback History
   4.5 只有 Qt、4.6 才补 GTK），代价却是 +1.72 MiB、两个包因 ABI 绑定必须同改、外加一个漏了
   就让界面崩溃的 `wrapGAppsHook3`；issue #566392 开了一个月 0 条评论，维护者没接话
+- issue #566392 已于 2026-10-21 **关闭（not planned）**，关闭前留了一条评论把上面这些代价和
+  `wrapGAppsHook3` 的配方写上去 —— 想做的人照着做就行，不用再从头踩一遍
 - 若哪天要重开，下面这些仍然成立（要开时还需要）
   - `nixpkgs-review`（`meta.platforms = linux`，跑 x86_64-linux / aarch64-linux，不开 darwin）
   - release note：`doc/release-notes/rl-2611.section.md` 的 *Other Notable Changes* 加一条
