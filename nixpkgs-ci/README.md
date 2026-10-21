@@ -62,7 +62,9 @@ A docs-only push to `master` costs `ci-check` (~15 s) and nothing else.
 One matrix leg per branch, and a leg does **upgrade → verify → push** in the same
 workspace, so a branch never receives a commit that has not been built:
 
-1. `nix-update -u <pkg> --format` — a package opts in by declaring `passthru.updateScript`;
+1. `nix-update -u <pkg> --format` — a package opts in by declaring `passthru.updateScript`.
+   `--format` calls `nixfmt` out of `PATH`, which `nix-update` does not bring along, so
+   the job installs `nixfmt-rs` next to it;
 2. `nix-instantiate --option allow-import-from-derivation false -A <pkg>.drvPath`, the same
    IFD check `pkgs/README.md` asks for;
 3. `nix-build -A <pkg>` inside `cachix watch-exec mtul`, so the result lands in the cache;
@@ -76,6 +78,17 @@ tags.
 
 `-f only=pkg/helix` limits a run to those branches. `-f verify_only=true` skips
 `nix-update` and only runs the two checks: that is the fast loop after a manual fix.
+
+#### Getting told when it stops
+
+A leg that cannot move a package ends the step successfully with a `::warning::`, and
+GitHub sends nothing for a green run — a failure buried in an hourly log went unnoticed
+for nine hours once, so every path that stops a leg now opens an issue on the fork,
+labelled `update-failed`: `nix-update` failed, a previous build failed and its
+`ci-failed/` tag still stands, this build failed, or the push was rejected because the
+branch moved. One issue per branch-and-package-and-reason; a repeat with the same summary
+adds nothing, a change of version appends one comment. Pushing the package closes every
+`update-failed` issue that names it.
 
 ### integrate
 
