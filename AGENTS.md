@@ -229,6 +229,11 @@ PR, it is probably the wrong change for the fork too.
   `jj config set --repo`, never by hand-editing. Current settings narrow `revsets.log`
   and restrict fetching (`remotes.upstream.fetch-bookmarks = "nixos-unstable"`),
   because a plain `jj git fetch` otherwise imports ~290 upstream branches.
+- **Builds belong to CI; do not compile locally.** `nixpkgs-ci` builds every attribute a branch declares
+  and puts the result in `mtul.cachix.org`, so local work is evaluation, not building. Where a store
+  path is supposed to exist already, `nix-build … --max-jobs 0` proves it: that substitutes or fails
+  instead of quietly starting a local build. If the path is missing, trigger the workflow — do not
+  fall back to compiling.
 - Upstream `master` is not used by the pipeline: everything, including `trunk()`, is based on `nixos-unstable`. Fetch or diff it only when preparing an upstream pull request, to check whether a change already landed.
 - Do not clone the repository. If you genuinely need a working tree, `jj workspace add`
   it, and `jj workspace forget <name>` plus delete the directory afterwards — leftover
