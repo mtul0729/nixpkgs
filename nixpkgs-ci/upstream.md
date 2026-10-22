@@ -245,3 +245,30 @@ they have to be able to answer questions about the change.
 - `branches.txt`: leave it alone. Dropping the line afterwards is a human decision.
 - A green run does not prove substitutability — compare the store path's `.narinfo` on
   `mtul.cachix.org`.
+
+## 5. Evaluating someone else's PR
+
+When the question is whether to adopt a change someone else proposed, not whether to send one:
+
+- **Build the PR, not the release.** The head usually sits on the upstream branch well past the last
+  tag, so its diff may not apply to the version we package. Either take the patch with `fetchpatch2`
+  pinned to a commit — a PR-level `.diff` URL changes whenever the author force-pushes — or point
+  `src` at the head commit and give the package a `<version>-unstable-<date>` version. Do it on a
+  throwaway `test/<pkg>-<pr>` branch; the package branch stays clean, and nothing from the
+  evaluation reaches `pkg/*`.
+- **CI is the only builder.** A branch outside `branches.txt` is invisible to the pipeline, so add
+  its line for the duration and remove it afterwards. Locally, substitute what CI built
+  (`--max-jobs 0`); AGENTS.md, *Local environment*.
+- **Measure the effect the PR claims.** If it says two bars become one, the evidence is a screenshot
+  with one bar. Reading the diff tells you what the code intends, not what the window looks like —
+  and the gap between those two is the whole point of evaluating it.
+- **Check what the client has to request.** A compositor grants a decoration mode; a frameless
+  window, a custom title bar and drag/resize handling are requests the app has to make and then
+  implement. If the app never asks, no setting on the compositor side makes the change appear —
+  that is the difference between "the PR does not work here" and "the PR was never given the
+  chance here". Name which one it is before writing to the author.
+- **A screenshot shows appearance, not interaction.** Pointer and keyboard input cannot be injected
+  into a window in this environment, so dragging, clicking, resizing and shortcuts stay unverified.
+  Say which were looked at and which were not.
+- **Clean up when the decision is made.** Branch, `branches.txt` line, workspace, build output. Keep
+  `notes/<pkg>-<pr>.md` only when a future reader would otherwise have to repeat the evaluation.
