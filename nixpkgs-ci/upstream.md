@@ -275,8 +275,11 @@ When the question is whether to adopt a change someone else proposed, not whethe
   implement. If the app never asks, no setting on the compositor side makes the change appear —
   that is the difference between "the PR does not work here" and "the PR was never given the
   chance here". Name which one it is before writing to the author.
-- **A screenshot shows appearance, not interaction.** Pointer and keyboard input cannot be injected
-  into a window in this environment, so dragging, clicking, resizing and shortcuts stay unverified.
-  Say which were looked at and which were not.
+- **A screenshot shows appearance; interaction needs a click that lands.** Pointer injection works,
+  but the coordinates have to name the output the window is on: a click tool that defaults to one
+  output will report success while every click goes to another monitor, and a silent miss looks
+  exactly like a dead input path. Resolve the window's output, and convert from the window
+  screenshot's own scale rather than the output's, before concluding that input does not work. If
+  interaction was not exercised, say so.
 - **Clean up when the decision is made.** Branch, `branches.txt` line, workspace, build output. Keep
   `notes/<pkg>-<pr>.md` only when a future reader would otherwise have to repeat the evaluation.
