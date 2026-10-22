@@ -15,4 +15,3 @@ pkg/activitywatch: aw-server-rust
 pkg/fcitx5-vinput
 pkg/siyuan
 pkg/disktree
-test/disktree-107
