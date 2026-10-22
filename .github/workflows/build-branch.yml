@@ -1,0 +1,130 @@
+# 按参数构建任意分支：评估别人的 PR、试一个补丁、验证一次 rebase。
+#
+# branches.txt 是「长期由 CI 维护的分支」清单。临时评估不该往里塞一行再删掉：
+# 那一小时里 update 和 integrate 都会把它当成常规分支跑，删掉又会让 integrate
+# 的缓存失去意义。这个 workflow 只手动触发，分支名是参数，产物同样进 mtul 缓存。
+#
+# 手动触发：
+#   gh workflow run build-branch.yml -R mtul0729/nixpkgs -f branch=test/<pkg>-<pr>
+#   gh workflow run build-branch.yml -R mtul0729/nixpkgs -f branch=test/<pkg>-<pr> -f attrs='<pkg> <pkg2>'
+#   gh workflow run build-branch.yml -R mtul0729/nixpkgs -f branch=test/<pkg>-<pr> -f push_to_cache=false
+#
+# 分支上的包按 by-name 相对 merge-base 的改动算；不在 by-name 里的属性用 attrs 指定。
+name: build-branch
+run-name: build-branch (${{ inputs.branch }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "要构建的分支，例如 test/<pkg>-<pr>"
+        type: string
+        required: true
+      attrs:
+        description: "要构建的属性，空格或逗号分隔；留空 = 该分支相对 merge-base 改动的 by-name 包"
+        type: string
+      push_to_cache:
+        description: "把构建结果推送到 mtul 缓存"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-branch-${{ inputs.branch }}
+  cancel-in-progress: true
+
+env:
+  FORK: mtul0729/nixpkgs
+  UPSTREAM: NixOS/nixpkgs
+  UPSTREAM_BRANCH: nixos-unstable
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: fork
+          sparse-checkout: nixpkgs-ci
+          sparse-checkout-cone-mode: false
+
+      - name: Restore the nixpkgs git cache
+        uses: actions/cache@v6
+        with:
+          path: nixpkgs/.git
+          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-build-${{ inputs.branch }}
+          restore-keys: |
+            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-build-
+            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: mtul
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build ${{ inputs.branch }}
+        env:
+          NIX_PATH: nixpkgs=${{ github.workspace }}/nixpkgs
+          BRANCH: ${{ inputs.branch }}
+          ATTRS: ${{ inputs.attrs }}
+          PUSH: ${{ inputs.push_to_cache }}
+        run: |
+          set -euo pipefail
+          [ -d nixpkgs/.git ] || git init -q nixpkgs
+          cd nixpkgs
+          git remote add origin "https://github.com/$UPSTREAM" 2>/dev/null \
+            || git remote set-url origin "https://github.com/$UPSTREAM"
+          git fetch -q --filter=blob:none --no-tags origin "$UPSTREAM_BRANCH"
+          git fetch -q --no-tags "https://github.com/$FORK" \
+            "+refs/heads/$BRANCH:refs/remotes/fork/$BRANCH"
+          git checkout -q -f -B eval "refs/remotes/fork/$BRANCH"
+
+          # attrs wins when given; otherwise take the by-name packages the branch adds or
+          # modifies since it left upstream. The merge base, never the upstream tip: a topic
+          # branch does not follow upstream, and a two-point diff would count every upstream
+          # change since its base.
+          if [ -n "${ATTRS:-}" ]; then
+            read -r -a NEW <<< "$(printf '%s' "$ATTRS" | tr ',' ' ')"
+          else
+            base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$BRANCH")
+            mapfile -t NEW < <(
+              git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$BRANCH" \
+                -- 'pkgs/by-name/*/*/package.nix' \
+                | awk -F/ '{print $4}' | sort -u
+            )
+          fi
+          if [ ${#NEW[@]} -eq 0 ]; then
+            echo "::error::$BRANCH 没有可构建的属性：相对 $UPSTREAM_BRANCH 没有改动 by-name 包，也没有传 attrs"
+            exit 1
+          fi
+          echo "building: ${NEW[*]}"
+
+          # Same two checks as update: no IFD, then build. The result goes to the cache so the
+          # evaluation only ever substitutes locally.
+          args=()
+          for a in "${NEW[@]}"; do
+            nix-instantiate --eval --strict \
+              --option allow-import-from-derivation false \
+              -A "$a.drvPath" >/dev/null
+            args+=(-A "$a")
+          done
+          if [ "$PUSH" = "true" ]; then
+            built=$(cachix watch-exec mtul -- nix-build "${args[@]}" --no-out-link)
+          else
+            built=$(nix-build "${args[@]}" --no-out-link)
+          fi
+          printf '%s\n' "$built"
+          {
+            echo "### $BRANCH"
+            echo '```'
+            printf '%s\n' "$built"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

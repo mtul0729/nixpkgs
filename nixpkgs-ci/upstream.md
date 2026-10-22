@@ -256,9 +256,17 @@ When the question is whether to adopt a change someone else proposed, not whethe
   `src` at the head commit and give the package a `<version>-unstable-<date>` version. Do it on a
   throwaway `test/<pkg>-<pr>` branch; the package branch stays clean, and nothing from the
   evaluation reaches `pkg/*`.
-- **CI is the only builder.** A branch outside `branches.txt` is invisible to the pipeline, so add
-  its line for the duration and remove it afterwards. Locally, substitute what CI built
-  (`--max-jobs 0`); AGENTS.md, *Local environment*.
+- **CI is the only builder.** Build it with `build-branch.yml`, which takes the branch as an
+  argument:
+
+  ```bash
+  gh workflow run build-branch.yml -R mtul0729/nixpkgs -f branch=test/<pkg>-<pr>
+  ```
+
+  It builds the by-name packages the branch changes relative to its merge base, or whatever
+  `-f attrs=...` names, and pushes the result to `mtul.cachix.org`. `branches.txt` is for branches
+  CI maintains; an evaluation branch does not belong there, not even for an hour. Locally,
+  substitute what CI built (`--max-jobs 0`); AGENTS.md, *Local environment*.
 - **Measure the effect the PR claims.** If it says two bars become one, the evidence is a screenshot
   with one bar. Reading the diff tells you what the code intends, not what the window looks like —
   and the gap between those two is the whole point of evaluating it.
