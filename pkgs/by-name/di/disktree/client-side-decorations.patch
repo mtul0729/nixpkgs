@@ -1,0 +1,24 @@
+diff --git a/crates/disktree-app/src/main.rs b/crates/disktree-app/src/main.rs
+index 0a15a2d..cddb69c 100644
+--- a/crates/disktree-app/src/main.rs
++++ b/crates/disktree-app/src/main.rs
+@@ -187,6 +187,19 @@ fn run() -> Result<()> {
+                         // Below this the treemap stops being readable, so ask
+                         // the compositor not to go there.
+                         window_min_size: Some(size(px(900.), px(600.))),
++                        // The strip in `chrome` is the title bar, so on a
++                        // compositor that grants server-side decorations the
++                        // window ends up with a second bar above it. Ask for
++                        // the client frame by default; Zed lets the user
++                        // choose for the same reason, so
++                        // DISKTREE_WINDOW_DECORATIONS=server keeps the
++                        // compositor's title bar.
++                        window_decorations: Some(
++                            match std::env::var("DISKTREE_WINDOW_DECORATIONS").as_deref() {
++                                Ok("server") => gpui_kit::WindowDecorations::Server,
++                                _ => gpui_kit::WindowDecorations::Client,
++                            },
++                        ),
+                         ..Default::default()
+                     },
+                     move |window, cx| {

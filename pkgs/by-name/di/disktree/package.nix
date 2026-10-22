@@ -33,6 +33,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   cargoHash = "sha256-k+iLvOS+6o5oC+JcG9BJ3UUAzZAQpcpNelKCXsDx0Fw=";
 
+  # Probe for PR #107: ask for client-side decorations so COSMIC does not
+  # add its own title bar above the app's strip. Not for upstream as is.
+  patches = [ ./client-side-decorations.patch ];
+
   nativeBuildInputs = [
     pkg-config
     desktop-file-utils
