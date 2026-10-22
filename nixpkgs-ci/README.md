@@ -47,13 +47,14 @@ preparing a pull request against nixpkgs, to check whether a change already land
 
 ## CI
 
-Three workflows, each with one job:
+Four workflows, each with one job:
 
 | workflow | trigger | what it does |
 | --- | --- | --- |
 | `ci-check` | push to `master` touching `nixpkgs-ci/**` or `.github/workflows/**` | parses every workflow's YAML, checks `branches.txt` syntax, and checks that each branch exists on the fork |
 | `update` | hourly at `:13`, manual (`only`, `verify_only`) | per branch: `nix-update`, IFD check, build, and only then push the branch |
 | `integrate` | after `update` finishes, hourly at `:43`, manual | rebase every branch onto current `nixos-unstable`, push `integration`, build the attributes the branches carry |
+| `build-branch` | manual (`branch`, `attrs`, `push_to_cache`) | build one branch's attributes without listing it in `branches.txt` — for evaluating a PR or trying a patch |
 
 A docs-only push to `master` costs `ci-check` (~15 s) and nothing else.
 
