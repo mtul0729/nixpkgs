@@ -1,4 +1,3 @@
-diff --git a/internal/gui/bus_linux.go b/internal/gui/bus_linux.go
 --- a/internal/gui/bus_linux.go
 +++ b/internal/gui/bus_linux.go
 @@ -28,6 +28,15 @@
