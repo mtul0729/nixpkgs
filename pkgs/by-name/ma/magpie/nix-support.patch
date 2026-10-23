@@ -1,0 +1,111 @@
+# What a packaged magpie tells the program it is running under Nix:
+#
+#   update.go       A package build is not a release, so it does not update
+#                   itself. Without this, Released() accepts the version the
+#                   package passes at build time, the GUI offers the release
+#                   page after a "you cannot write there" check, and
+#                   `magpie update` downloads a binary meant for /nix/store.
+#
+#   autostart.go    The entry written for "open at login" names nixSelf, the
+#                   wrapper, instead of os.Executable(), which is the binary
+#                   inside it.
+#
+#   instance_unix.go
+#                   A store copy counts as an installed magpie, so the
+#                   instance lock is shared across versions rather than one
+#                   per versioned path.
+#
+#   scheme_linux.go The package installs the desktop entry; the one written
+#                   here would pin Exec to a per-version store path and, in
+#                   the XDG user directory, outrank it.
+--- a/internal/update/update.go
++++ b/internal/update/update.go
+@@ -104,10 +104,19 @@
+ 	return &r, nil
+ }
+ 
++// NixBuild marks a build whose updates belong to the package manager,
++// set at build time. Such a build has no release to compare itself against:
++// the version it reports is the package's, and replacing the binary would
++// put a file the store does not know about where the store expects one.
++var NixBuild string
++
+ // Released reports whether v is a release version rather than a build from
+ // source ("dev", "0bcb2cc-dirty", git describe's "v0.1.0-3-g0bcb2cc");
+ // only releases update themselves.
+ func Released(v string) bool {
++	if NixBuild != "" {
++		return false
++	}
+ 	s := parse(v)
+ 	return s != nil && !describe.MatchString(s.pre) && !strings.Contains(s.pre, "dirty")
+ }
+--- a/internal/autostart/autostart.go
++++ b/internal/autostart/autostart.go
+@@ -16,6 +16,12 @@
+ // Arg is what magpie is started with at login: the tray, no window.
+ const Arg = "tray"
+ 
++// nixSelf is the program to start at login, set at build time: the wrapper
++// the package installs, not os.Executable()'s answer, which is the binary
++// inside it — a versioned store path, and one the wrapper's environment is
++// not applied to.
++var nixSelf string
++
+ // State is whether magpie opens at login, as the system will act on it.
+ type State string
+ 
+@@ -71,6 +77,12 @@
+ 	if p := os.Getenv("APPIMAGE"); p != "" {
+ 		return p, nil
+ 	}
++	if nixSelf != "" {
++		if p, err := filepath.EvalSymlinks(nixSelf); err == nil {
++			return p, nil
++		}
++		return nixSelf, nil
++	}
+ 	exe, err := os.Executable()
+ 	if err != nil {
+ 		return "", err
+--- a/internal/gui/instance_unix.go
++++ b/internal/gui/instance_unix.go
+@@ -35,10 +35,12 @@
+ }
+ 
+ // installedCopy is whether exe is an installed magpie: the program of an
+-// app bundle, or Homebrew's.
++// app bundle, Homebrew's, or the store copy a package manager put there.
+ func installedCopy(exe string) bool {
+ 	exe = filepath.ToSlash(exe)
+-	return strings.Contains(exe, ".app/Contents/MacOS/") || strings.Contains(exe, "/Cellar/magpie/")
++	return strings.Contains(exe, ".app/Contents/MacOS/") ||
++		strings.Contains(exe, "/Cellar/magpie/") ||
++		strings.Contains(exe, "/nix/store/")
+ }
+ 
+ // holdInstance takes the lock at path for this process, or reports that
+--- a/internal/gui/scheme_linux.go
++++ b/internal/gui/scheme_linux.go
+@@ -11,6 +11,7 @@
+ 
+ 	"github.com/yetone/magpie/internal/appdir"
+ 	"github.com/yetone/magpie/internal/proc"
++	"github.com/yetone/magpie/internal/update"
+ )
+ 
+ // desktopIcon is the entry's Icon=magpie, put in the user's icon theme: the
+@@ -36,6 +37,13 @@
+ // installed beside it. An entry that already runs this executable, claims
+ // it and names the window class is left alone.
+ func registerScheme() error {
++	// The package installs the entry. The one written here pins Exec to
++	// os.Executable(), a per-version store path, and the XDG user directory
++	// outranks the system one, so after an upgrade the launcher would keep
++	// starting whichever version wrote it first.
++	if update.NixBuild != "" {
++		return nil
++	}
+ 	// The package supplies the host entry; this executable is inside the sandbox.
+ 	if os.Getenv("FLATPAK_ID") != "" {
+ 		return nil
