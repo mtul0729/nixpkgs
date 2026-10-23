@@ -10,6 +10,12 @@
 #                   wrapper, instead of os.Executable(), which is the binary
 #                   inside it.
 #
+#   autostart_other.go
+#                   That entry's Exec carries the version, so an upgrade
+#                   leaves it pointing at a store path that garbage collection
+#                   takes away. refresh() repoints an entry an older build
+#                   wrote, leaving one the user turned off alone.
+#
 #   instance_unix.go
 #                   A store copy counts as an installed magpie, so the
 #                   instance lock is shared across versions rather than one
@@ -68,6 +74,62 @@
  	exe, err := os.Executable()
  	if err != nil {
  		return "", err
+--- a/internal/autostart/autostart_other.go
++++ b/internal/autostart/autostart_other.go
+@@ -56,8 +56,51 @@
+ 	return nil
+ }
+ 
+-// refresh: nothing an older magpie wrote here needs writing again
+-func refresh() error { return nil }
++// refresh points an entry an older build wrote at this one. Its Exec is a
++// store path with the version in it: an upgrade leaves the old one behind and
++// garbage collection takes it away, so the entry would open nothing. An entry
++// the user turned off, and one that is not magpie's own (Arg and nothing
++// else), is left as it is.
++func refresh() error {
++	if nixSelf == "" {
++		return nil
++	}
++	p := record()
++	b, err := os.ReadFile(p)
++	if os.IsNotExist(err) {
++		return nil
++	}
++	if err != nil {
++		return err
++	}
++	lines := strings.Split(string(b), "\n")
++	for _, line := range lines {
++		switch strings.TrimSpace(line) {
++		case "Hidden=true", "X-GNOME-Autostart-enabled=false":
++			return nil
++		}
++	}
++	want := `Exec="` + nixSelf + `" ` + Arg
++	for i, line := range lines {
++		key, value, ok := strings.Cut(line, "=")
++		if !ok || strings.TrimSpace(key) != "Exec" {
++			continue
++		}
++		if line == want {
++			return nil
++		}
++		exe := strings.Trim(strings.TrimSuffix(strings.TrimSpace(value), " "+Arg), `"`)
++		if !strings.HasPrefix(exe, "/nix/store/") {
++			return nil
++		}
++		if base := filepath.Base(exe); base != "magpie" && base != ".magpie-wrapped" {
++			return nil
++		}
++		lines[i] = want
++		return os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644)
++	}
++	return nil
++}
+ 
+ // heldBack: nothing here is switched off apart from the record itself
+ func heldBack() bool { return false }
 --- a/internal/gui/instance_unix.go
 +++ b/internal/gui/instance_unix.go
 @@ -35,10 +35,12 @@
