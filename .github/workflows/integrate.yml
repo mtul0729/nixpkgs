@@ -7,15 +7,14 @@
 # 而 integration 用的是今天的 unstable —— 上游动了依赖，drv 就变，这里会重编，
 # 编不过就红。没变化时只是下载，几乎不花时间。
 #
-# 触发：update 跑完自动接、每小时 :43 兜底、手动。
+# 触发：update 跑完自动接、手动。没有独立的定时排班——update 每小时都会跑，
+# 完成即接；再加一条 :43 只会在同一小时里把同样的 rebase 和构建做第二遍。
 name: integrate
 
 on:
   workflow_run:
     workflows: [update]
     types: [completed]
-  schedule:
-    - cron: "43 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -33,6 +32,9 @@ env:
 
 jobs:
   integrate:
+    # update 失败也要跑：一条腿失败不该挡住其余分支发布。但被取消的那次什么都没
+    # 推，重放它只会把上一次 integration 再发一遍。
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
