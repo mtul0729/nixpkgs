@@ -1,84 +1,99 @@
-<p align="center">
-  <a href="https://nixos.org">
-    <picture>
-      <source media="(prefers-color-scheme: light)" srcset="https://brand.nixos.org/logos/nixos-logo-default-gradient-black-regular-horizontal-minimal.svg">
-      <source media="(prefers-color-scheme: dark)" srcset="https://brand.nixos.org/logos/nixos-logo-default-gradient-white-regular-horizontal-minimal.svg">
-      <img src="https://brand.nixos.org/logos/nixos-logo-default-gradient-black-regular-horizontal-minimal.svg" width="500px" alt="NixOS logo">
-    </picture>
-  </a>
-</p>
+# mtul0729/nixpkgs
 
-<p align="center">
-  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/github/contributors-anon/NixOS/nixpkgs" alt="Contributors badge" /></a>
-  <a href="https://opencollective.com/nixos"><img src="https://opencollective.com/nixos/tiers/supporter/badge.svg?label=supporters&color=brightgreen" alt="Open Collective supporters" /></a>
-</p>
+A personal fork of [nixpkgs](https://github.com/NixOS/nixpkgs) that carries the packages I
+maintain and that are not in nixpkgs yet. They are packaged in nixpkgs' `pkgs/by-name`
+layout so they can be sent upstream as a PR — several already are.
 
-[Nixpkgs](https://github.com/nixos/nixpkgs) is a collection of over 140,000 software packages that can be installed with the [Nix](https://nixos.org/nix/) package manager.
-It also implements [NixOS](https://nixos.org/nixos/), a purely-functional Linux distribution.
+Looking for nixpkgs itself? You want [NixOS/nixpkgs](https://github.com/NixOS/nixpkgs).
 
-# Manuals
+## Packages
 
-* [NixOS Manual](https://nixos.org/nixos/manual) - how to install, configure, and maintain a purely-functional Linux distribution
-* [Nixpkgs Manual](https://nixos.org/nixpkgs/manual/) - contributing to Nixpkgs and using programming-language-specific Nix expressions
-* [Nix Package Manager Manual](https://nixos.org/nix/manual) - how to write Nix expressions (programs), and how to use Nix command line tools
+| Attribute | What it is |
+| --- | --- |
+| `magpie` | Desktop client for "every agent's model, one place" |
+| `dashbeam` | P2P file transfer with NAT hole punching, built on iroh |
+| `helix` | Post-modern modal text editor, packaged from upstream `master` |
+| `cosmic-desktop-mcp` | MCP server for driving a COSMIC/Wayland desktop |
+| `activitywatch` | Automatic time tracker: `aw-server-rust`, `aw-webui` and the watchers |
+| `fcitx5-vinput` | Voice input addon for Fcitx5, local or cloud ASR |
+| `siyuan` | Privacy-first personal knowledge management system |
+| `disktree` | Disk usage treemap for finding and removing files |
 
-# Community
+## Use it
 
-* [Discourse Forum](https://discourse.nixos.org/)
-* [Matrix Chat](https://matrix.to/#/#space:nixos.org)
-* [Official wiki](https://wiki.nixos.org/)
-* [Community-maintained list of ways to get in touch](https://wiki.nixos.org/wiki/Get_In_Touch#Chat) (Discord, Telegram, IRC, etc.)
+### One-off, nothing to configure
 
-# Other Project Repositories
+```bash
+nix shell 'github:mtul0729/nixpkgs/integration#legacyPackages.x86_64-linux.magpie'
+```
 
-The sources of all official Nix-related projects are in the [NixOS organization on GitHub](https://github.com/NixOS/).
-Here are some of the main ones:
+### As a flake input
 
-* [Nix](https://github.com/NixOS/nix) - the purely functional package manager
-* [NixOps](https://github.com/NixOS/nixops) - the tool to remotely deploy NixOS machines
-* [nixos-hardware](https://github.com/NixOS/nixos-hardware) - NixOS profiles to optimize settings for different hardware
-* [Nix RFCs](https://github.com/NixOS/rfcs) - the formal process for making substantial changes to the community
-* [NixOS homepage](https://github.com/NixOS/nixos-homepage) - the [NixOS.org](https://nixos.org) website
-* [hydra](https://github.com/NixOS/hydra) - our continuous integration system
-* [NixOS Branding](https://github.com/NixOS/branding) - NixOS branding
+```nix
+{
+  inputs.integration.url = "github:mtul0729/nixpkgs/integration";
+  # no `inputs.nixpkgs.follows` here — on purpose, see "Binary cache" below
+}
+```
 
-# Continuous Integration and Distribution
+Take attributes directly:
 
-Nixpkgs and NixOS are built and tested by our continuous integration system, [Hydra](https://hydra.nixos.org/).
+```nix
+environment.systemPackages = [
+  inputs.integration.legacyPackages.${pkgs.stdenv.hostPlatform.system}.magpie
+];
+```
 
-* [Continuous package builds for unstable/master](https://hydra.nixos.org/jobset/nixos/trunk-combined)
-* [Continuous package builds for the NixOS 26.05 release](https://hydra.nixos.org/jobset/nixos/release-26.05)
-* [Tests for unstable/master](https://hydra.nixos.org/job/nixos/trunk-combined/tested#tabs-constituents)
-* [Tests for the NixOS 26.05 release](https://hydra.nixos.org/job/nixos/release-26.05/tested#tabs-constituents)
+Or overlay them onto your own `pkgs`:
 
-Artifacts successfully built with Hydra are published to cache at https://cache.nixos.org/.
-When successful build and test criteria are met, the Nixpkgs expressions are distributed via [Nix channels](https://nix.dev/manual/nix/stable/command-ref/nix-channel.html).
+```nix
+nixpkgs.overlays = [
+  (final: prev: {
+    inherit (inputs.integration.legacyPackages.${final.stdenv.hostPlatform.system})
+      magpie
+      dashbeam
+      helix
+      cosmic-desktop-mcp
+      activitywatch
+      fcitx5-vinput
+      siyuan
+      disktree;
+  })
+];
+```
 
-# Contributing
+### Binary cache
 
-Nixpkgs is among the most active projects on GitHub.
-While thousands of open issues and pull requests might seem like a lot at first, it helps to consider it in the context of the scope of the project.
-Nixpkgs describes how to build tens of thousands of pieces of software and implements a Linux distribution.
-The [GitHub Insights](https://github.com/NixOS/nixpkgs/pulse) page gives a sense of the project activity.
+```bash
+cachix use mtul
+```
 
-Community contributions are always welcome through GitHub Issues and Pull Requests.
+CI builds every package on `integration` and pushes it to that cache, so using it is normally
+a download instead of a compile. This is also why the input deliberately does **not** follow
+your nixpkgs: the cache is keyed by derivation, and only evaluating against the nixpkgs the
+CI used produces the derivation that is in the cache. Following your own nixpkgs would give
+you different derivations and you would build everything from source.
 
-For more information about contributing to the project, please visit the [contributing page](CONTRIBUTING.md).
+## Branches
 
-# Donations
+| Branch | What it is |
+| --- | --- |
+| `master` | `nixos-unstable` plus the CI and docs commits. No packages. |
+| `pkg/<name>` | One package per branch, in `pkgs/by-name/...` |
+| `pr/<name>-<version>` | The same tree staged for an upstream PR |
+| `integration` | All `pkg/*` branches rebased onto today's `nixos-unstable`, built and cached. **This is the branch to use.** |
 
-The infrastructure for NixOS and related projects is maintained by a nonprofit organization, the [NixOS Foundation](https://nixos.org/nixos/foundation.html).
-To ensure the continuity and expansion of the NixOS infrastructure, we are looking for donations to our organization.
+`integration` is regenerated every hour. If one branch conflicts with upstream it is skipped
+and named in the log; the rest still get merged and published, so one broken package does not
+take the cache down for the others.
 
-You can donate to the NixOS Foundation through [SEPA bank transfers](https://nixos.org/donate.html) or by using Open Collective:
+## Updates
 
-<a href="https://opencollective.com/nixos#support"><img src="https://opencollective.com/nixos/tiers/supporter.svg?width=890" /></a>
+Packages that declare `passthru.updateScript` are bumped automatically: CI checks upstream
+every hour, runs `nix-update`, builds, and pushes to the package branch only if the build
+passes. `integration` is regenerated right after. Packages without an update script are
+pinned by hand.
 
-# License
+## Issues
 
-Nixpkgs is licensed under the [MIT License](COPYING).
-
-> [!Note]
-> MIT license does not apply to the packages built by Nixpkgs, merely to the files in this repository (the Nix expressions, build scripts, NixOS modules, etc.).
-It also might not apply to patches included in Nixpkgs, which may be derivative works of the packages to which they apply.
-The aforementioned artifacts are all covered by the licenses of the respective packages.
+Open an issue here, not upstream — unless the problem is in nixpkgs itself.

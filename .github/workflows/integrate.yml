@@ -198,7 +198,10 @@ jobs:
           old=$(git rev-parse refs/remotes/fork/master)
           git checkout -q -B fork-master "$old"
 
-          if ! git rebase "origin/$UPSTREAM_BRANCH"; then
+          # -X ours：master 上的自有内容（README.md、nixpkgs-ci/、两个 workflow）冲突时
+          # 以 fork 为准。README 是给访客看的门面，上游一改它就会撞车；这里不能因为一次
+          # 文档冲突就让 integration 停止更新。
+          if ! git rebase -X ours "origin/$UPSTREAM_BRANCH"; then
             git rebase --abort
             echo "::error::fork master 上的提交没法 rebase 到 upstream，需要手工处理"
             exit 1
