@@ -60,6 +60,10 @@ The same rule covers **how a package is built**, not only how it is structured:
 
 ## Working on master
 
+Before the first edit of a session, run `jj st`. `@` is a commit, not a scratch tree: if
+it sits on `master`, or on any commit that has already been pushed, the edit rewrites
+that commit and drags the bookmark with it. Run `jj new master@origin` first.
+
 `master` exists to carry the CI workflow, `branches.txt` and this documentation. Nothing
 consumes its commits: `integration` is built from `nixos-unstable` plus the topic
 branches, and those branches do not descend from `master`.
