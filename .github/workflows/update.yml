@@ -152,22 +152,26 @@ jobs:
             "+refs/heads/$BRANCH:refs/remotes/fork/$BRANCH"
           git checkout -q -f -B bot "refs/remotes/fork/$BRANCH"
 
-          # A line may name its packages (`branch: pkg1 pkg2`); otherwise take
-          # the by-name packages the branch adds or modifies since it left
-          # upstream. The merge base, never the upstream tip: a topic branch
-          # does not follow upstream, and a two-point diff would count every
-          # upstream change since its base.
-          case "$line" in
-            *:*) read -r -a NEW <<< "$(printf '%s' "${line#*:}" | tr ',' ' ')" ;;
-            *)
-              base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$BRANCH")
-              mapfile -t NEW < <(
-                git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$BRANCH" \
-                  -- 'pkgs/by-name/*/*/package.nix' \
-                  | awk -F/ '{print $4}' | sort -u
-              )
-              ;;
-          esac
+          # The by-name packages the branch adds or modifies since it left
+          # upstream, plus the ones a line names (`branch: pkg1 pkg2`). The
+          # names are a supplement -- a package outside by-name, such as a
+          # second attribute in all-packages.nix, which the path diff cannot
+          # see -- not a replacement for the diff. The merge base, never the
+          # upstream tip: a topic branch does not follow upstream, and a
+          # two-point diff would count every upstream change since its base.
+          base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$BRANCH")
+          mapfile -t RAW < <(
+            git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$BRANCH" \
+              -- 'pkgs/by-name/*/*/package.nix' \
+              | awk -F/ '{print $4}'
+            case "$line" in
+              *:*) printf '%s' "${line#*:}" | tr ',' '\n' ;;
+            esac
+          )
+          mapfile -t NEW < <(
+            printf '%s\n' "${RAW[@]}" \
+              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | sort -u
+          )
           if [ ${#NEW[@]} -eq 0 ]; then
             echo "$BRANCH: no packages"
             exit 0
