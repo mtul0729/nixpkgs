@@ -194,7 +194,10 @@ buildGoModule (finalAttrs: {
     license = lib.licenses.mit;
     mainProgram = "magpie";
     mainDarwinApp = "magpie.app";
-    maintainers = with lib.maintainers; [ _27Aaron ];
+    maintainers = with lib.maintainers; [
+      _27Aaron
+      myul
+    ];
     # bun is both a build input and the plugin runtime the wrapper points
     # at, and it exists on three platforms. Claiming the rest of
     # lib.platforms.linux makes `nix-env -iA nixpkgs.magpie` on them fail to
