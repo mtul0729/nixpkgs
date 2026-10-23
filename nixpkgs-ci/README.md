@@ -53,7 +53,7 @@ Four workflows, each with one job:
 | --- | --- | --- |
 | `ci-check` | push to `master` touching `nixpkgs-ci/**` or `.github/workflows/**` | parses every workflow's YAML, checks `branches.txt` syntax, and checks that each branch exists on the fork |
 | `update` | hourly at `:13`, manual (`only`, `verify_only`) | per branch: `nix-update`, IFD check, build, and only then push the branch |
-| `integrate` | after `update` finishes, hourly at `:43`, manual | rebase every branch onto current `nixos-unstable`, push `integration`, build the attributes the branches carry |
+| `integrate` | after `update` finishes, manual | rebase every branch onto current `nixos-unstable`, push `integration`, build the attributes the branches carry |
 | `build-branch` | manual (`branch`, `attrs`, `push_to_cache`) | build one branch's attributes without listing it in `branches.txt` — for evaluating a PR or trying a patch |
 
 A docs-only push to `master` costs `ci-check` (~15 s) and nothing else.
@@ -96,6 +96,10 @@ adds nothing, a change of version appends one comment. Pushing the package close
 `integrate` rebases every branch onto the current `nixos-unstable`, pushes `integration`,
 then runs `nix-build` for the attributes those branches declare (`branches.txt`'s
 explicit list first, otherwise the by-name directory names).
+
+It has no schedule of its own: `update` runs hourly, so its completion is the signal,
+and a second hourly cron only repeated the same rebase and build minutes later. The
+cost is that a skipped or delayed `update` run delays `integration` by that much.
 
 That build is the drift check. Each branch was verified against **its own** base, while
 `integration` is built against **today's** unstable: if upstream moved a dependency, the
