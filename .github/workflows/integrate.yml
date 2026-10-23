@@ -134,16 +134,18 @@ jobs:
           git push --force "https://x-access-token:$TOKEN@github.com/$FORK.git" \
             "HEAD:refs/heads/$INTEGRATION"
 
-          # 合进来的分支各自声明了哪些属性：显式列表优先，否则按 by-name 目录名。
+          # 合进来的分支各自声明了哪些属性。两部分取并：by-name 目录名（目录名即属性名，
+          # 对 by-name 包是准的），加上显式列表 —— 后者补的是 by-name 看不见的包，
+          # 例如定义在 all-packages.nix 里的另一个属性。**不是替代**：写过一次
+          # `branch: foo` 就把 by-name 的包挤掉，等于默默少建一个。
           : > "$RUNNER_TEMP/attrs.txt"
           for b in "${merged[@]}"; do
+            base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$b")
+            git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$b" \
+              -- 'pkgs/by-name/*/*/package.nix' | awk -F/ '{print $4}' \
+              >> "$RUNNER_TEMP/attrs.txt"
             if [ -n "${EXPLICIT[$b]:-}" ]; then
               printf '%s\n' ${EXPLICIT[$b]} >> "$RUNNER_TEMP/attrs.txt"
-            else
-              base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$b")
-              git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$b" \
-                -- 'pkgs/by-name/*/*/package.nix' | awk -F/ '{print $4}' \
-                >> "$RUNNER_TEMP/attrs.txt"
             fi
           done
           sort -u "$RUNNER_TEMP/attrs.txt" -o "$RUNNER_TEMP/attrs.txt"

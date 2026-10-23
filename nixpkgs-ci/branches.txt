@@ -7,6 +7,8 @@
 #
 # 一行可以是「分支」，也可以是「分支: 包名 包名」。后者用于包不在 pkgs/by-name 下的情况：
 # 更新 bot 靠改动的文件路径找候选包，路径里没有 by-name 的包只能在这里显式声明。
+# 显式列表是**补充**，不是替代：by-name 里的包照常按目录名自动识别，这里只补
+# by-name 看不见的（例如 all-packages.nix 里同源的另一个属性）。
 pkg/dashbeam
 pkg/magpie: magpie-cli
 pkg/helix
