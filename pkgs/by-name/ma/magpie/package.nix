@@ -12,8 +12,9 @@
 #   nix-support.patch
 #                   The program behaves like something a package manager
 #                   installed: it does not update itself, its login entry
-#                   names the wrapper, one instance lock covers every
-#                   version, and it writes no entry into $HOME.
+#                   names the wrapper and is repointed after an upgrade, one
+#                   instance lock covers every version, and it writes no
+#                   entry into $HOME.
 #   no-double-tray-item-cosmic.patch
 #                   COSMIC keeps the item it filed under the well-known name
 #                   after that name is released, so registering again adds a
