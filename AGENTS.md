@@ -228,6 +228,17 @@ PR, it is probably the wrong change for the fork too.
   that walks upstream history is slow — the default log revset once took 57 s because of
   the remote bookmarks. **Put a `timeout` on every jj/git command** and do not iterate on
   revsets blindly.
+- **The clone is partial and shallow, and jj cannot fill it in.** `remote.upstream` is a
+  promisor remote with `partialclonefilter = blob:none`, and `.git/shallow` carries ~11.8k
+  boundaries. jj's git backend does not fetch promisor blobs lazily, so anything whose tree
+  has not been materialised fails with `Object … of type file not found`: `jj file show -r
+  <rev>`, `jj new <rev>`, and rebasing a branch onto a freshly fetched upstream commit all
+  break this way. Check `git config --get remote.upstream.partialclonefilter` before planning
+  to check out a new base. To put a commit on a tree jj cannot materialise, build it with git
+  plumbing (`read-tree`, `update-index --cacheinfo`, `commit-tree`, `update-ref`) and run
+  `jj git import` afterwards. Do not add `--depth=1` to a fetch: `blob:none` already limits
+  what is downloaded, and the cut leaves a new shallow root that a later plain fetch will not
+  remove — `git rev-list --max-parents=0` shows it, and only `--unshallow` undoes it.
 - Repo-scoped jj config lives at the path printed by `jj config path --repo`
   (`~/.config/jj/repos/<id>/config.toml`), not in `.jj/repo/`. Set it with
   `jj config set --repo`, never by hand-editing. Current settings narrow `revsets.log`
