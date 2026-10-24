@@ -291,7 +291,9 @@ In `update` look for `branches: ...`, `updatable: [...]`, and `<pkg>: already at
 thing that moves a branch. Hundreds of entries in `updatable` mean the branch-base rule
 above was violated — stop and fix the branch. `ci-failed/<branch>/<tree>` tags are the
 backoff record: the tag says that exact tree was built and failed, so it is skipped until
-the tree changes. In `integrate`, `will build: ...` lists the attributes the merged
+the tree changes. When the failure was external — a dependency or toolchain that upstream
+fixed later — the tree never changes on its own, so delete the tag before re-running
+(`git push <fork> :refs/tags/ci-failed/<branch>/<tree>`) or the identical tree stays skipped. In `integrate`, `will build: ...` lists the attributes the merged
 branches carry — a package missing from that list was never checked. A green run does not
 prove substitutability: compare the store path's `.narinfo` on `mtul.cachix.org`.
 
