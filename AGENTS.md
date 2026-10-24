@@ -206,8 +206,11 @@ a script can find it is a red flag for a reviewer and for future you.
 Order of preference:
 
 1. **Declare the attribute.** A `branches.txt` line may name its packages, e.g.
-   `pkg/activitywatch: aw-server-rust`. That is all a package outside `pkgs/by-name/`
-   needs in order to be seen.
+   `pkg/activitywatch: aw-server-rust`. Several are comma-separated (`pkg/x: a,b`), not
+   space-separated — the workflow splits on commas. List every attribute the branch owns:
+   discovery otherwise only sees `pkgs/by-name/*/*/package.nix` paths that the diff touches,
+   so a branch whose update writes only a sibling file (`channels.json`) names its packages
+   here. That is all a package outside `pkgs/by-name/` needs in order to be seen.
 2. **Write an update script.** `passthru.updateScript = ./update.sh` is the documented
    mechanism for "the default heuristics cannot edit this correctly" (see
    `pkgs/README.md`, *Automatic package updates*). A shared `sources` fetch with a
