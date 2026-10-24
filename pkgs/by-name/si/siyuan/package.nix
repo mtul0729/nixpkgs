@@ -21,6 +21,7 @@
   go_1_26,
   onnxruntime,
   darwin,
+  channel ? "stable",
 }:
 
 let
@@ -41,6 +42,12 @@ let
   };
 
   platformId = platformIds.${system} or (throw "Unsupported platform: ${system}");
+
+  # Per-channel pins. The stable channel lives in ./channels.json next to this
+  # file; pkgs/by-name/si/siyuan-preview/package.nix selects the other one with
+  # `siyuan.override { channel = "preview"; }`. update.sh rewrites this file.
+  channels = lib.importJSON ./channels.json;
+  channelData = channels.${channel} or (throw "siyuan: unknown channel '${channel}'");
 
   # The name electron-builder's extraResources expects for the current platform.
   # The archive we build is a placeholder: afterPack only checks that bin/pandoc
@@ -63,7 +70,7 @@ let
   # so the models can be prefetched with fetchurl and the hook made a no-op.
   # update.sh refreshes it along with the version; prepare-ocr.py fails the build
   # on a hash mismatch rather than silently skipping.
-  ocrManifest = builtins.fromJSON (builtins.readFile ./ocr-assets.json);
+  ocrManifest = builtins.fromJSON (builtins.readFile (./. + "/${channelData.ocrAssets}"));
   hasOCR = ocrManifest != null;
 
   # Where upstream's prepare-ocr.py expects the runtime library, per platform.
@@ -122,20 +129,20 @@ let
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "siyuan";
-  version = "3.8.8";
+  inherit (channelData) version;
 
   src = fetchFromGitHub {
     owner = "siyuan-note";
     repo = "siyuan";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-sa4p6shcbSYKXE7Zp7XilmqcAOp4kNKhoQNtl4zPpyE=";
+    hash = channelData.src;
   };
 
   kernel = buildGoModule {
     name = "${finalAttrs.pname}-${finalAttrs.version}-kernel";
     inherit (finalAttrs) src;
     sourceRoot = "${finalAttrs.src.name}/kernel";
-    vendorHash = "sha256-pc1HFKp2TQeCBJHdc2lnQwlpxg8IJ9CKnPoYe+C6cKA=";
+    vendorHash = channelData.vendorHash;
 
     patches = [
       (replaceVars ./set-pandoc-path.patch {
@@ -197,7 +204,7 @@ stdenv.mkDerivation (finalAttrs: {
       ;
     inherit pnpm;
     fetcherVersion = 4;
-    hash = "sha256-e+qyTEL2jfgJENleWC3Zk7C98rRFjUE9rdZGjWmaOpU=";
+    hash = channelData.pnpmDeps;
   };
 
   sourceRoot = "${finalAttrs.src.name}/app";
@@ -357,6 +364,6 @@ stdenv.mkDerivation (finalAttrs: {
       ltrump
       myul
     ];
-    platforms = lib.attrNames platformIds;
+    platforms = if channel == "preview" then lib.platforms.linux else lib.attrNames platformIds;
   };
 })
