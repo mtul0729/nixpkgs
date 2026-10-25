@@ -53,6 +53,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
   __structuredAttrs = true;
   strictDeps = true;
 
+  # The upstream suite assumes a full desktop session and host filesystem
+  # features such as xattrs, setgid directories and GIO Trash.
+  doCheck = false;
+
   nativeBuildInputs = [
     pkg-config
     wrapGAppsHook4
