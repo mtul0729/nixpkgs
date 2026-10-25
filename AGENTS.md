@@ -58,24 +58,71 @@ The same rule covers **how a package is built**, not only how it is structured:
 - Every upstream workflow is already `disabled_manually`. Do not re-enable any of them;
   `nixpkgs-ci` is the only one meant to run.
 
+## Workspaces
+
+The repository root (`default`) is the long-lived view of the documentation on `master`.
+Its `@` must remain a clean, empty descendant of `master@origin`. Other agents may be using
+the same checkout concurrently, so it is never an editing surface: do not change files
+there, `jj edit` a topic commit there, or run `jj new <topic>` to bring code into it.
+
+Every edit, including an edit to `master`, happens in a dedicated jj workspace. Run
+`jj st` before editing; if the checkout is not the clean empty master descendant described
+above, leave it alone and create a workspace from the intended base.
+
+```bash
+# Package code: the same base the CI pipeline uses.
+jj workspace add /tmp/ws-<package> -r nixos-unstable@upstream
+
+# Documentation or CI files destined for master.
+jj workspace add /tmp/ws-docs-<topic> -r master@origin
+```
+
+To continue existing work, pass its bookmark or change id to `-r` instead. In the
+workspace, use `jj new` to start a new change and edit normally. After pushing a commit,
+run `jj new` in that workspace before making another edit so the published commit is not
+rewritten.
+
+Remove workspaces when their work is finished:
+
+```bash
+jj workspace forget <name>
+rm -rf /tmp/ws-<name>
+```
+
+After a master workspace has pushed its commits, refresh the root checkout's read-only
+view without editing there:
+
+```bash
+jj git fetch
+jj new master@origin
+```
+
+That keeps the root working copy on a clean empty descendant of the new `master@origin`.
+
 ## Working on master
 
-Before the first edit of a session, run `jj st`. `@` is a commit, not a scratch tree: if
-it sits on `master`, or on any commit that has already been pushed, the edit rewrites
-that commit and drags the bookmark with it. Run `jj new master@origin` first.
+Do not edit `master` in the root checkout. Its `@` is the clean empty view described in
+*Workspaces*. Before the first edit of a session, create or enter a master workspace and
+check that its `@` is not sitting on a commit that has already been pushed:
+
+```bash
+jj git fetch
+jj workspace add /tmp/ws-docs-<topic> -r master@origin
+cd /tmp/ws-docs-<topic>
+jj new -m "<what and why>"
+# edit
+```
+
+Then push and seal the change in that workspace:
+
+```bash
+jj git push -b master
+jj new                       # <- see the trap below; do this before any further edit
+```
 
 `master` exists to carry the CI workflow, `branches.txt` and this documentation. Nothing
 consumes its commits: `integration` is built from `nixos-unstable` plus the topic
 branches, and those branches do not descend from `master`.
-
-Change it by appending:
-
-```bash
-jj new master@origin -m "<what and why>"
-# edit
-jj git push -b master        # or: git push <sha>:refs/heads/master
-jj new                       # <- see the trap below; do this before any further edit
-```
 
 A trap in that sequence: `jj describe` does not publish, and `jj git push` does not seal
 the change — `@` is still on it. An edit after the push rewrites the commit that is
