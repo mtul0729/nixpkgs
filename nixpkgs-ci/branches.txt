@@ -17,3 +17,4 @@ pkg/activitywatch: aw-server-rust
 pkg/fcitx5-vinput
 pkg/siyuan: siyuan,siyuan-preview
 pkg/disktree
+pkg/strata
