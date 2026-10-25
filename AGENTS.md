@@ -239,8 +239,10 @@ git push --force-with-lease=refs/heads/<branch>:<old sha> \
   `--diff-filter=AM`. Do not add a parallel `<name>-git` attribute.
 - **Never push `integration` by hand**, and never push `master` with `GITHUB_TOKEN` — it
   needs `PUSH_TOKEN`.
-- **Never disable a check to make CI green.** If a package does not build, leave the
-  branch untouched and report it.
+- **Never disable a check to hide a build failure.** If a package does not build, leave
+  the branch untouched and report it. `doCheck = false` is the deliberate fork policy
+  for `pkg/*` branches; see *Tests on `pkg/` branches* in `nixpkgs-ci/README.md`. A PR
+  branch must meet upstream's test requirements.
 - **Never turn a `pkg/*` branch into the PR branch** — not by pushing it as-is, not by
   rebasing it onto `upstream/master`. Build a copy (see *Talking to upstream*).
 
