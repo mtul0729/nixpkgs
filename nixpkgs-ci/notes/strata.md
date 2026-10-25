@@ -83,15 +83,23 @@ git diff --check
 GIO Trash 等 Nix 构建沙箱不提供的宿主文件系统能力；按 fork 的 `pkg/` 策略，构建期
 不运行测试。若以后准备向上游提 PR，测试要求和策略应在单独的 PR 分支中重新处理。
 
-## 状态与下一步
+## CI 结果
 
-分支：`test/strata-init`。包和补丁已就绪，等待推送到
-`mtul0729/nixpkgs` 后由 `build-branch.yml` 完整构建。触发方式：
+`build-branch` 运行
+[40170888757](https://github.com/mtul0729/nixpkgs/actions/runs/40170888757)
+于 21 分 34 秒内通过。构建产物为：
 
-```bash
-gh workflow run build-branch.yml -R mtul0729/nixpkgs \
-  -f branch=test/strata-init
+```text
+/nix/store/4w0z3mzd5s1y385qipr2r2schzar15k6-strata-1.1.0
 ```
 
-先看真实构建结果；测试按上面的 `pkg/` 策略关闭。CI 通过后再把分支加入
-`nixpkgs-ci/branches.txt`。
+该路径已推送到 `mtul.cachix.org`；NAR hash 为
+`sha256:0lb7hycjhvfn6j02q66rqxvyscafnj3hq106aqr09lqiwlasv0mv`。日志确认执行了
+IFD 检查、完整构建、`installPhase`、GTK wrapper 和缓存推送。构建只产生三个上游
+warning，没有测试失败，因为测试按上面的 `pkg/` 策略关闭。
+
+## 分支与登记
+
+正式长期分支为 `pkg/strata`，与通过 CI 的 `test/strata-init` 指向同一提交
+`a95241a3`。`pkg/strata` 已加入 `nixpkgs-ci/branches.txt`；临时
+`test/strata-init` 不再是长期分支，可在确认无其他用途后删除。
