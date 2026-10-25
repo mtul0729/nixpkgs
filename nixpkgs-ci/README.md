@@ -80,6 +80,19 @@ tags.
 `-f only=pkg/helix` limits a run to those branches. `-f verify_only=true` skips
 `nix-update` and only runs the two checks: that is the fast loop after a manual fix.
 
+### Tests on `pkg/` branches
+
+Packages on `pkg/` branches are built with `doCheck = false`. These branches exist to
+produce a working package for this fork and its cache, not to stand in for upstream's
+test matrix. Upstream suites often need a full desktop session, host filesystem features,
+or tools that the Nix build sandbox deliberately does not provide.
+
+This is not permission to hide a package build failure. The derivation, IFD check,
+installation contents and runnable programs still have to pass. If a package is being
+prepared for an upstream PR, run its tests and satisfy upstream's review requirements in
+the separate PR branch; do not carry the fork's `doCheck = false` policy into that review
+without explaining it.
+
 #### Getting told when it stops
 
 A leg that cannot move a package ends the step successfully with a `::warning::`, and
@@ -140,8 +153,9 @@ committed, and the run goes red. To iterate:
    runs the two checks without touching `nix-update` (~2-3 minutes)
 6. `gh workflow run integrate.yml -R mtul0729/nixpkgs` publishes it into `integration`
 
-Do not make a failing check pass by turning it off (`doCheck = false`, `--impure`, a local
-override). If a package cannot build, leave the branch alone and say so.
+Do not make a failing build pass with `--impure` or a local override. If a package cannot
+build, leave the branch alone and say so. `doCheck = false` is the deliberate fork policy
+for `pkg/` branches (see *Tests on `pkg/` branches*), not a workaround for a build failure.
 
 ## Why import-from-derivation is not allowed
 
