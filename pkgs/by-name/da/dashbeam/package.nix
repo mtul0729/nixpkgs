@@ -127,6 +127,12 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   meta = {
     description = "P2P file transfer with NAT hole punching, built on iroh";
+    longDescription = ''
+      Nearby device discovery uses mDNS on UDP port 5353. On NixOS, allow it
+      with `networking.firewall.allowedUDPPorts = [ 5353 ];` if nearby devices
+      cannot see each other. Manual tickets, paired devices and relay
+      connections do not depend on mDNS.
+    '';
     homepage = "https://github.com/tonyantony300/dashbeam";
     license = lib.licenses.agpl3Only;
     maintainers = with lib.maintainers; [ myul ];
