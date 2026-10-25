@@ -76,8 +76,12 @@ git diff --check
 ```
 
 `drvPath` 为
-`/nix/store/3xl5hnrllrmvv94sn1jm4km5r0vqjgyb-strata-1.1.0.drv`。完整的
-`nix build .#strata` 本地太慢，按仓库规则改由 fork CI 编译和测试，不在本地继续跑。
+`/nix/store/pwjmzaidj8xl1c52kjihqgpcgx4klg8s-strata-1.1.0.drv`。完整的
+`nix build .#strata` 本地太慢，按仓库规则改由 fork CI 编译，不在本地继续跑。
+
+包设置 `doCheck = false`。上游测试套件需要完整桌面会话，以及 xattr、setgid 目录和
+GIO Trash 等 Nix 构建沙箱不提供的宿主文件系统能力；按 fork 的 `pkg/` 策略，构建期
+不运行测试。若以后准备向上游提 PR，测试要求和策略应在单独的 PR 分支中重新处理。
 
 ## 状态与下一步
 
@@ -89,6 +93,5 @@ gh workflow run build-branch.yml -R mtul0729/nixpkgs \
   -f branch=test/strata-init
 ```
 
-先看真实构建/测试结果；只有确认是构建环境缺失导致的失败，才做范围尽可能窄、带注释的
-测试跳过。不要用 `doCheck = false` 换绿灯。CI 通过后再把分支加入
+先看真实构建结果；测试按上面的 `pkg/` 策略关闭。CI 通过后再把分支加入
 `nixpkgs-ci/branches.txt`。
