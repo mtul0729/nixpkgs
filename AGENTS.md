@@ -345,9 +345,10 @@ In `update` look for `branches: ...`, `updatable: [...]`, and `<pkg>: already at
 thing that moves a branch. `already at` does not push a refreshed baseline. Hundreds of
 entries in `updatable` mean the branch-base rule above was violated — stop and fix the
 branch. `ci-failed/<branch>/<pkg>/<content-hash>` tags are the backoff record. The hash
-covers that package's effective diff from upstream, not the baseline tree or a sibling
-package's changes, so a new `nixos-unstable` commit or another package updating does not
-bypass a human decision. Retrying the same candidate requires deleting that exact tag:
+covers the package version and its definition directory's effective diff from upstream,
+not the baseline tree or a sibling package's changes, so neither a new `nixos-unstable`
+commit nor another package updating bypasses a human decision. Retrying the same candidate
+requires deleting that exact tag:
 
 ```bash
 git push <fork> :refs/tags/ci-failed/<branch>/<pkg>/<content-hash>

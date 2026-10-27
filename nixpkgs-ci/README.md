@@ -88,13 +88,14 @@ move it. `integration` still gets today's baseline when it is regenerated. When 
 does update, the baseline move and the package change are verified and pushed together.
 
 If the build fails, nothing is committed. The leg pushes a
-`ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers that package's effective
-diff from upstream, not the baseline tree or another package on the same branch. A later
-`nixos-unstable` commit or an update to a sibling package therefore does not bypass the
-tag. The same candidate is never retried automatically: deleting the tag, changing the
-package, or choosing a different baseline is a human decision. A new version or a package
-edit changes the hash and forms a new candidate. A successful update deletes only that
-package's failure tags.
+`ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the package version and its
+definition directory's effective diff from upstream, not the baseline tree or another
+package's changes. A later `nixos-unstable` commit or an update to a sibling package
+therefore does not bypass the tag, even when they share a data file. The same candidate is
+never retried automatically: deleting the tag, changing the package, or choosing a
+different baseline is a human decision. A new version or a package definition edit changes
+the hash and forms a new candidate. A successful update deletes only that package's failure
+tags.
 
 `-f only=pkg/helix` limits a run to those branches. `-f verify_only=true` still creates
 and rebases the candidate, but skips `nix-update` and only runs the two checks: that is
