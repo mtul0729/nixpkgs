@@ -53,7 +53,8 @@ The same rule covers **how a package is built**, not only how it is structured:
 - **A topic branch must descend from the branch the pipeline uses** (`nixos-unstable`),
   not from `master`. It need not track the upstream tip: `update` builds a private
   candidate rebased onto the unstable fetched for that run, and only pushes it when a
-  package actually changes. `integrate` rebases every branch when publishing.
+  package actually changes. `integrate` squashes each branch into one generated commit
+  when publishing; it never rewrites the topic branch's own history.
 - **`ci-failed` is a human gate.** The same candidate is never retried automatically,
   and neither moving the upstream baseline nor updating a sibling package invalidates its
   tag. Decide whether to change the package, choose a different baseline, or delete the
