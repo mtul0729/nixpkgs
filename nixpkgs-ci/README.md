@@ -103,10 +103,7 @@ labelled `update-failed`: `nix-update` failed, a previous build failed and its
 `ci-failed/` tag still stands, this build failed, or the push was rejected because the
 branch moved. One issue per branch-and-package-and-reason; a repeat with the same summary
 adds nothing, a change of version appends one comment. Pushing the package closes every
-`update-failed` issue that names it — and so does finding the branch already at the
-upstream version. That second path is not decoration: a transient failure (a 502 from the
-release feed, say) leaves an issue behind, and if upstream has nothing newer there is no
-push to close it, so it would sit open until the next release happened to sweep it away.
+`update-failed` issue that names it.
 
 ### integrate
 
