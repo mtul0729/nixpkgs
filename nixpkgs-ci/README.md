@@ -61,10 +61,14 @@ A docs-only push to `master` costs `ci-check` (~15 s) and nothing else.
 
 ### update
 
-One matrix leg per branch, and a leg does **upgrade → verify → push** in the same
-workspace, so a branch never receives a commit that has not been built:
+One matrix leg per branch. A leg builds a private `bot` candidate and does
+**rebase → upgrade → verify → push** in the same workspace, so a branch never receives
+a commit that has not been built:
 
-1. `nix-update -u <pkg> --format` — a package opts in by declaring `passthru.updateScript`.
+1. fetch the branch and current `nixos-unstable`, find their merge base, and rebase the
+   candidate onto the upstream tip. The merge base is also what identifies the packages
+   the branch carries;
+2. `nix-update -u <pkg> --format` — a package opts in by declaring `passthru.updateScript`.
    `--format` calls `nixfmt` out of `PATH`, which `nix-update` does not bring along, so
    the job installs `nixfmt-rs` next to it. `nix-update` fetches a release feed with a
    single unretried request, so a 502 or a dropped connection fails the leg outright; the
@@ -72,19 +76,27 @@ workspace, so a branch never receives a commit that has not been built:
    attempts because a failed run may already have rewritten `package.nix`. Only this step
    is retried — the build below is deterministic, and retrying it would burn CI time and
    hide a real failure;
-2. `nix-instantiate --option allow-import-from-derivation false -A <pkg>.drvPath`, the same
+3. `nix-instantiate --option allow-import-from-derivation false -A <pkg>.drvPath`, the same
    IFD check `pkgs/README.md` asks for;
-3. `nix-build -A <pkg>` inside `cachix watch-exec mtul`, so the result lands in the cache;
-4. only then `git commit` and `git push`.
+4. `nix-build -A <pkg>` inside `cachix watch-exec mtul`, so the result lands in the cache;
+5. only then `git commit` and a force-with-lease push of the candidate.
 
-If the build fails, nothing is committed. To keep a broken version from being retried
-every hour, the leg pushes a `ci-failed/<branch>/<tree>` tag; the next run computes the
-same tree, sees the tag, and skips. Touch the package — or a new version appears — and
-the tree changes, so it retries on its own. A successful update deletes that branch's
-tags.
+The baseline is a build input, not a branch that has to follow `nixos-unstable` every
+hour. If `nix-update` finds nothing, the candidate is discarded and the branch does not
+move; `integration` still gets today's baseline when it is regenerated. When a package
+does update, the baseline move and the package change are verified and pushed together.
 
-`-f only=pkg/helix` limits a run to those branches. `-f verify_only=true` skips
-`nix-update` and only runs the two checks: that is the fast loop after a manual fix.
+If the build fails, nothing is committed. The leg pushes a
+`ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the candidate's effective
+diff from upstream, not the baseline tree. A later `nixos-unstable` commit therefore does
+not bypass the tag. The same candidate is never retried automatically: deleting the tag,
+changing the package, or choosing a different baseline is a human decision. A new version
+or a package edit changes the hash and forms a new candidate. A successful update deletes
+only that package's failure tags.
+
+`-f only=pkg/helix` limits a run to those branches. `-f verify_only=true` still creates
+and rebases the candidate, but skips `nix-update` and only runs the two checks: that is
+the fast loop after a manual fix.
 
 ### Tests on `pkg/` branches
 
@@ -106,9 +118,10 @@ GitHub sends nothing for a green run — a failure buried in an hourly log went 
 for nine hours once, so every path that stops a leg now opens an issue on the fork,
 labelled `update-failed`: `nix-update` failed, a previous build failed and its
 `ci-failed/` tag still stands, this build failed, or the push was rejected because the
-branch moved. One issue per branch-and-package-and-reason; a repeat with the same summary
-adds nothing, a change of version appends one comment. Pushing the package closes every
-`update-failed` issue that names it.
+branch moved. One issue per branch-and-package-and-reason, plus one branch-level issue for
+a baseline rebase conflict; a repeat with the same summary adds nothing, a change of
+version appends one comment. A successful candidate push closes the package's issues and
+any baseline issue for the branch.
 
 An issue is therefore a report about a failure that survived the retries, not about the
 first dropped request. That distinction is the point of retrying in the first place: a
@@ -124,10 +137,11 @@ It has no schedule of its own: `update` runs hourly, so its completion is the si
 and a second hourly cron only repeated the same rebase and build minutes later. The
 cost is that a skipped or delayed `update` run delays `integration` by that much.
 
-That build is the drift check. Each branch was verified against **its own** base, while
-`integration` is built against **today's** unstable: if upstream moved a dependency, the
-derivation changes and gets rebuilt here, and a package that no longer builds turns the
-run red. When nothing changed it is a pure download.
+That build is still the drift check. `update` verifies against the unstable fetched at the
+start of its run, while `integration` is rebuilt after `update` finishes from the then
+current unstable plus every branch. If upstream moved in between, or the combined branch
+stack changes a derivation, it is rebuilt here and a failure turns the run red. When
+nothing changed it is a pure download.
 
 A branch that fails to rebase is skipped and named in the error; the others are still
 published.
@@ -152,16 +166,15 @@ published.
 ### Fixing a failing package
 
 `update` never leaves a broken commit on the branch: the build fails, nothing is
-committed, and the run goes red. To iterate:
+committed, and the leg reports an `update-failed` issue. To iterate:
 
 1. `jj workspace add ../fix-<name> -r 'pkg/<name>@origin'`
-2. reproduce with `nix-build . -A <attr> --no-out-link` — same base as CI, so a local
-   success is the derivation the runner would build
-3. fix, then run the checks from *Adding a package* above plus `nixfmt`
-4. push the branch
-5. `gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/<name> -f verify_only=true`
-   runs the two checks without touching `nix-update` (~2-3 minutes)
-6. `gh workflow run integrate.yml -R mtul0729/nixpkgs` publishes it into `integration`
+2. fix, then run the checks from *Adding a package* above plus `nixfmt`
+3. push the branch
+4. `gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/<name> -f verify_only=true`
+   rebuilds the candidate on current `nixos-unstable` and runs the two checks without
+   touching `nix-update` (~2-3 minutes)
+5. `gh workflow run integrate.yml -R mtul0729/nixpkgs` publishes it into `integration`
 
 Do not make a failing build pass with `--impure` or a local override. If a package cannot
 build, leave the branch alone and say so. `doCheck = false` is the deliberate fork policy

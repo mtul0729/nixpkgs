@@ -50,10 +50,13 @@ The same rule covers **how a package is built**, not only how it is structured:
   which CI redoes hourly. Add commits normally (`jj new master@origin`, edit, push)
   instead of rewriting a single amended commit.
 - Package code never goes on `master`. One topic branch per package.
-- **A topic branch's base must be the same branch the pipeline uses** (`nixos-unstable`).
-  A branch cut from `master` makes `merge-base` collapse to the upstream tip, so the
-  update bot sees every package upstream changed since then and pushes them onto your
-  branch. This has happened twice.
+- **A topic branch must descend from the branch the pipeline uses** (`nixos-unstable`),
+  not from `master`. It need not track the upstream tip: `update` builds a private
+  candidate rebased onto the unstable fetched for that run, and only pushes it when a
+  package actually changes. `integrate` rebases every branch when publishing.
+- **`ci-failed` is a human gate.** The same candidate is never retried automatically,
+  and moving the upstream baseline alone does not invalidate its tag. Decide whether to
+  change the package, choose a different baseline, or delete the tag.
 - Personal files belong in `nixpkgs-ci/`. Do not touch upstream's `ci/` directory.
 - Every upstream workflow is already `disabled_manually`. Do not re-enable any of them;
   `nixpkgs-ci` is the only one meant to run.
@@ -337,14 +340,20 @@ gh run view <id> -R mtul0729/nixpkgs --log --job=<job id>
 
 In `update` look for `branches: ...`, `updatable: [...]`, and `<pkg>: already at
 <version>` or `pushed <pkg>: <old> -> <new>`; a leg that built and pushed is the only
-thing that moves a branch. Hundreds of entries in `updatable` mean the branch-base rule
-above was violated — stop and fix the branch. `ci-failed/<branch>/<tree>` tags are the
-backoff record: the tag says that exact tree was built and failed, so it is skipped until
-the tree changes. When the failure was external — a dependency or toolchain that upstream
-fixed later — the tree never changes on its own, so delete the tag before re-running
-(`git push <fork> :refs/tags/ci-failed/<branch>/<tree>`) or the identical tree stays skipped. In `integrate`, `will build: ...` lists the attributes the merged
-branches carry — a package missing from that list was never checked. A green run does not
-prove substitutability: compare the store path's `.narinfo` on `mtul.cachix.org`.
+thing that moves a branch. `already at` does not push a refreshed baseline. Hundreds of
+entries in `updatable` mean the branch-base rule above was violated — stop and fix the
+branch. `ci-failed/<branch>/<pkg>/<content-hash>` tags are the backoff record. The hash
+covers the candidate's effective diff from upstream, not the baseline tree, so a new
+`nixos-unstable` commit does not bypass a human decision. Retrying the same candidate
+requires deleting that exact tag:
+
+```bash
+git push <fork> :refs/tags/ci-failed/<branch>/<pkg>/<content-hash>
+```
+
+In `integrate`, `will build: ...` lists the attributes the merged branches carry — a
+package missing from that list was never checked. A green run does not prove
+substitutability: compare the store path's `.narinfo` on `mtul.cachix.org`.
 
 ## About this file
 
