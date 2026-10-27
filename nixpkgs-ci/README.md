@@ -143,7 +143,10 @@ already spends minutes rebasing 134 update commits. The integration step instead
 `git merge-tree --write-tree --merge-base` once per branch and creates one commit with
 `git commit-tree`; the working tree is checked out only once at the end. A branch whose
 effective diff conflicts with the integration built so far is skipped and named in the
-error, exactly as before.
+error, exactly as before. Fork refs are fetched with `blob:none` and the fork is a promisor
+remote, so `merge-tree` and the final checkout lazily fetch only the blobs they need.
+Fetching those refs without a filter makes Git reconcile the blobless upstream cache against
+the fork's complete trees and can spend minutes transferring almost no data.
 
 It has no schedule of its own: `update` runs hourly, so its completion is the signal,
 and a second hourly cron only repeated the same integration work and build minutes later.
