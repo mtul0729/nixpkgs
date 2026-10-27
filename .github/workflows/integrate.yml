@@ -1,14 +1,14 @@
 # 把 branches.txt 里的分支合成 integration 并发布。
 #
-# integration = NixOS/nixpkgs 的 nixos-unstable ＋ 每个分支 rebase 上去。sysadmin
-# 引 github:mtul0729/nixpkgs/integration，所以这一步是唯一的发布动作。
+# integration = NixOS/nixpkgs 的 nixos-unstable ＋ 每个分支的有效 diff 各压成一个
+# 提交。sysadmin 引 github:mtul0729/nixpkgs/integration，所以这一步是唯一的发布动作。
 #
 # 合并之后把这些分支声明的属性构建一遍：分支各自验证时用的是自己的 base，
 # 而 integration 用的是今天的 unstable —— 上游动了依赖，drv 就变，这里会重编，
 # 编不过就红。没变化时只是下载，几乎不花时间。
 #
 # 触发：update 跑完自动接、手动。没有独立的定时排班——update 每小时都会跑，
-# 完成即接；再加一条 :43 只会在同一小时里把同样的 rebase 和构建做第二遍。
+# 完成即接；再加一条 :43 只会在同一小时里把同样的合成和构建做第二遍。
 name: integrate
 
 on:
@@ -45,8 +45,8 @@ jobs:
           sparse-checkout: nixpkgs-ci
           sparse-checkout-cone-mode: false
 
-      # nixpkgs 的历史里绝大多数是 blob，而 rebase 只要 commit 和 tree；
-      # blob:none 让这一步从十几分钟降到一两分钟，检出时再按需拉当前树。
+      # nixpkgs 的历史里绝大多数是 blob，而合成只需要最终树和分支改动涉及的
+      # blob；blob:none 让这一步从十几分钟降到一两分钟，检出时再按需拉当前树。
       - name: Restore the nixpkgs git cache
         uses: actions/cache@v6
         with:
@@ -69,7 +69,7 @@ jobs:
       # GITHUB_TOKEN 推不了：integration 分支第一次出现时，整棵 nixpkgs 树都算
       # "新增的 workflow 文件"，需要 workflow 权限。PUSH_TOKEN 是有 workflow
       # scope 的 PAT。
-      - name: Rebase the branches onto upstream
+      - name: Squash the branches onto upstream
         env:
           TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
@@ -110,28 +110,48 @@ jobs:
           done
           git fetch --no-tags "https://github.com/$FORK" "${refspecs[@]}"
 
-          git checkout -B "$INTEGRATION" "origin/$UPSTREAM_BRANCH"
+          git checkout -q -B "$INTEGRATION" "origin/$UPSTREAM_BRANCH"
+          integration_tip=$(git rev-parse HEAD)
           failed=()
           merged=()
           for b in "${BRANCHES[@]}"; do
             echo "::group::$b"
-            # 只重放这个分支相对 upstream 的提交。从 fork master 拉出来的分支会
-            # 带一个 CI 提交，merge-base 把它排除在外；分支有几个提交都无所谓。
-            base=$(git merge-base "$INTEGRATION" "refs/remotes/fork/$b")
-            git checkout -B "pending-$b" "refs/remotes/fork/$b"
-            if git rebase --onto "$INTEGRATION" "$base"; then
-              git checkout "$INTEGRATION"
-              git merge --ff-only "pending-$b"
+            branch_tip=$(git rev-parse "refs/remotes/fork/$b")
+            base=$(git merge-base "$integration_tip" "$branch_tip")
+            # Replay the branch's effective diff, not its individual commits. The
+            # source branch keeps its history; integration is generated and force-
+            # pushed anyway, so checking out 134 magpie updates buys consumers
+            # nothing and costs minutes.
+            if merge_out=$(git merge-tree --write-tree --messages \
+              --merge-base="$base" "$integration_tip" "$branch_tip"); then
+              tree=$(printf '%s\n' "$merge_out" \
+                | awk '/^[0-9a-f]+$/ && (length($0) == 40 || length($0) == 64) {
+                    print; exit
+                  }')
+              if [ -z "$tree" ]; then
+                printf '%s\n' "$merge_out"
+                echo "::error::$b: merge-tree 没有输出 tree id"
+                exit 1
+              fi
+              if [ "$tree" = "$(git rev-parse "$integration_tip^{tree}")" ]; then
+                echo "$b: no changes"
+              else
+                count=$(git rev-list --count "$base..$branch_tip")
+                integration_tip=$(git commit-tree "$tree" -p "$integration_tip" \
+                  -m "integration: $b ($count commits)" \
+                  -m "Source: $b at $branch_tip")
+              fi
               merged+=("$b")
             else
-              git rebase --abort || true
-              git checkout "$INTEGRATION"
+              printf '%s\n' "$merge_out"
               failed+=("$b")
-              echo "::error::$b 与 upstream 冲突，这次先跳过它"
+              echo "::error::$b 与当前 integration 冲突，这次先跳过它"
             fi
             echo "::endgroup::"
           done
 
+          # Update the ref and working tree once, after all merges.
+          git checkout -q -B "$INTEGRATION" "$integration_tip"
           git log --oneline "origin/$UPSTREAM_BRANCH..HEAD"
           git push --force "https://x-access-token:$TOKEN@github.com/$FORK.git" \
             "HEAD:refs/heads/$INTEGRATION"
@@ -147,7 +167,8 @@ jobs:
               -- 'pkgs/by-name/*/*/package.nix' | awk -F/ '{print $4}' \
               >> "$RUNNER_TEMP/attrs.txt"
             if [ -n "${EXPLICIT[$b]:-}" ]; then
-              printf '%s\n' ${EXPLICIT[$b]} >> "$RUNNER_TEMP/attrs.txt"
+              read -ra explicit_attrs <<< "${EXPLICIT[$b]}"
+              printf '%s\n' "${explicit_attrs[@]}" >> "$RUNNER_TEMP/attrs.txt"
             fi
           done
           sort -u "$RUNNER_TEMP/attrs.txt" -o "$RUNNER_TEMP/attrs.txt"
@@ -156,7 +177,7 @@ jobs:
           # 有分支没合进来时 job 要红，但 integration 已经推出去了：其余包照常
           # 有缓存，不会因为一个包卡住整条链。
           if [ ${#failed[@]} -gt 0 ]; then
-            echo "::error::以下分支没能 rebase，integration 里暂时没有它们：${failed[*]}"
+            echo "::error::以下分支没能合并，integration 里暂时没有它们：${failed[*]}"
             exit 1
           fi
 
