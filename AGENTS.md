@@ -55,8 +55,10 @@ The same rule covers **how a package is built**, not only how it is structured:
   candidate rebased onto the unstable fetched for that run, and only pushes it when a
   package actually changes. `integrate` rebases every branch when publishing.
 - **`ci-failed` is a human gate.** The same candidate is never retried automatically,
-  and moving the upstream baseline alone does not invalidate its tag. Decide whether to
-  change the package, choose a different baseline, or delete the tag.
+  and neither moving the upstream baseline nor updating a sibling package invalidates its
+  tag. Decide whether to change the package, choose a different baseline, or delete the
+  tag. A successful package update is the only automatic path that moves a branch's
+  baseline; otherwise a human moves it.
 - Personal files belong in `nixpkgs-ci/`. Do not touch upstream's `ci/` directory.
 - Every upstream workflow is already `disabled_manually`. Do not re-enable any of them;
   `nixpkgs-ci` is the only one meant to run.
@@ -343,9 +345,9 @@ In `update` look for `branches: ...`, `updatable: [...]`, and `<pkg>: already at
 thing that moves a branch. `already at` does not push a refreshed baseline. Hundreds of
 entries in `updatable` mean the branch-base rule above was violated — stop and fix the
 branch. `ci-failed/<branch>/<pkg>/<content-hash>` tags are the backoff record. The hash
-covers the candidate's effective diff from upstream, not the baseline tree, so a new
-`nixos-unstable` commit does not bypass a human decision. Retrying the same candidate
-requires deleting that exact tag:
+covers that package's effective diff from upstream, not the baseline tree or a sibling
+package's changes, so a new `nixos-unstable` commit or another package updating does not
+bypass a human decision. Retrying the same candidate requires deleting that exact tag:
 
 ```bash
 git push <fork> :refs/tags/ci-failed/<branch>/<pkg>/<content-hash>

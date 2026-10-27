@@ -9,10 +9,10 @@
 # 分支。pkg/ 分支的基线是更新时的构建输入，不是需要每小时同步的发布状态。
 #
 # 同一个候选构建失败过，就打一个
-# ci-failed/<branch>/<pkg>/<content-hash> 的 tag。hash 取候选相对 upstream 的
-# 有效 diff，不包含基线本身；所以 upstream 移动不会绕过标记。同一个候选永远
-# 不自动重试，删标记、改代码还是换基线由人决定。新版本、有人改了包内容，或者
-# 人删除了标记，才会形成一次新的尝试。升级成功后只清该包对应的旧标记。
+# ci-failed/<branch>/<pkg>/<content-hash> 的 tag。hash 只取该包相对 upstream 的
+# 有效 diff，不包含基线本身或同分支其他包的改动；所以 upstream 移动不会绕过
+# 标记，别的包自动更新也不会。同一个候选永远不自动重试，删标记、改代码还是换
+# 基线由人决定。升级成功后只清该包对应的旧标记。
 #
 # 任何一条会让腿停下来的路径（基线 rebase 冲突、升级失败、以前构建失败被标记、
 # 这次构建失败、推送被拒）都在 fork 上开一个 update-failed 的 issue，同一个标题只开
@@ -326,11 +326,23 @@ jobs:
               continue
             fi
             new=$(nix-instantiate --eval --raw -A "$pkg.version")
+            # nix-update can update one package on a branch that carries several.
+            # Another package succeeding is not a human decision to retry this one,
+            # so scope the marker to this package's definition directory and the
+            # paths this nix-update actually changed.
+            position=$(nix-instantiate --eval --raw -A "$pkg.meta.position" 2>/dev/null || true)
+            scope=()
+            if [ -n "$position" ]; then
+              scope+=("$(dirname "${position%:*}")")
+            fi
             git add -A pkgs
-            content=$(git diff --cached --binary "origin/$UPSTREAM_BRANCH" | git hash-object --stdin)
+            mapfile -t touched < <(git diff --name-only "$before" | sed '/^$/d')
+            scope+=("${touched[@]}")
+            content=$(git diff --cached --binary "origin/$UPSTREAM_BRANCH" -- "${scope[@]}" \
+              | git hash-object --stdin)
             tag="ci-failed/$BRANCH/$pkg/$content"
-            # 这个候选已经试过并失败，不再自动重试。hash 不包含 upstream 基线：
-            # 单纯 rebase 不会绕过人工闸门。包内容或版本变化才会产生新 hash。
+            # 这个候选已经试过并失败，不再自动重试。hash 不包含 upstream 基线
+            # 或同分支其他包：单纯 rebase、别的包更新都不会绕过人工闸门。
             if git ls-remote --exit-code "$FORK_URL" "refs/tags/$tag" >/dev/null 2>&1; then
               echo "::warning::$pkg $new 上次构建失败过（$tag），跳过"
               # 不通知：这是 backoff 的预期行为，annotation 已经写进 run 摘要，
