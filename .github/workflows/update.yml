@@ -1,16 +1,22 @@
 # fork 的升级 workflow：把每个包分支升到上游最新版，验证通过才推回分支。
 #
 # 每个分支一个 matrix leg，在同一个 workspace 里完成：
-#   改文件（nix-update）→ IFD 检查 → 构建 → 提交并推送
-# 所以分支上不会出现没验证过的提交，也不需要候选分支或回滚。
+#   建候选（rebase 到本次 fetch 的 nixos-unstable）→ 改文件（nix-update）
+#   → IFD 检查 → 构建 → 提交并推送
+# 所以分支上不会出现没验证过的提交，也不需要长期维护的候选分支或回滚。
 #
-# 同一个 tree 构建失败过，就打一个 ci-failed/<branch>/<tree> 的 tag；下一轮
-# 看到同一个 tree 直接跳过，不会每小时重试一个已知坏掉的版本。分支或包一旦被
-# 改动，tree 就变了，tag 不再匹配，自动重试。升级成功后清掉该分支的旧标记。
+# 候选只在包里确实有新内容时才会推送：单纯有新 upstream 基线不会移动 pkg/
+# 分支。pkg/ 分支的基线是更新时的构建输入，不是需要每小时同步的发布状态。
 #
-# 任何一条会让腿停下来的路径（升级失败、以前构建失败被标记、这次构建失败、推送
-# 被拒）都在 fork 上开一个 update-failed 的 issue，同一个标题只开一次、摘要没变就
-# 不重复评论；包推上去之后自动关掉。
+# 同一个候选构建失败过，就打一个
+# ci-failed/<branch>/<pkg>/<content-hash> 的 tag。hash 取候选相对 upstream 的
+# 有效 diff，不包含基线本身；所以 upstream 移动不会绕过标记。同一个候选永远
+# 不自动重试，删标记、改代码还是换基线由人决定。新版本、有人改了包内容，或者
+# 人删除了标记，才会形成一次新的尝试。升级成功后只清该包对应的旧标记。
+#
+# 任何一条会让腿停下来的路径（基线 rebase 冲突、升级失败、以前构建失败被标记、
+# 这次构建失败、推送被拒）都在 fork 上开一个 update-failed 的 issue，同一个标题只开
+# 一次、摘要没变就不重复评论；候选推上去之后自动关掉。
 #
 # 升级这一步会重试：nix-update 抓 release feed 只请求一次，一个 502 就能把腿打掉。
 # 网络抖动在重试里消化掉，issue 留给重试也救不回来的失败。
@@ -154,6 +160,7 @@ jobs:
           git fetch -q --no-tags "https://github.com/$FORK" \
             "+refs/heads/$BRANCH:refs/remotes/fork/$BRANCH"
           git checkout -q -f -B bot "refs/remotes/fork/$BRANCH"
+          old_tip=$(git rev-parse "refs/remotes/fork/$BRANCH")
 
           # The by-name packages the branch adds or modifies since it left
           # upstream, plus the ones a line names (`branch: pkg1 pkg2`). The
@@ -222,15 +229,32 @@ jobs:
           # 推上去了，之前挂在 <branch>: <pkg> 上的 issue 可以关了。
           close_issues() {
             local pkg="$1" comment="$2" n
-            export TITLE_PREFIX="$BRANCH: $pkg "
+            export PKG_PREFIX="$BRANCH: $pkg " BASELINE_PREFIX="$BRANCH: baseline "
             for n in $(gh issue list -R "$FORK" --label update-failed --state open --limit 100 \
               --json number,title \
-              --jq '[.[] | select(.title | startswith(env.TITLE_PREFIX)) | .number][]' || true); do
+              --jq '[.[] | select((.title | startswith(env.PKG_PREFIX)) or (.title | startswith(env.BASELINE_PREFIX))) | .number][]' || true); do
               gh issue close "$n" -R "$FORK" --comment "$comment" >/dev/null \
                 || echo "::warning::$BRANCH: issue #$n 没关掉"
             done
             return 0
           }
+
+          # pkg/ 分支的基线按需移动：先把本次要验证的候选 rebase 到这一轮
+          # fetch 的 unstable。没有包更新时这个候选不会推送；有新版本时，
+          # 基线和包更新作为一个已经构建过的整体一起推。
+          if ! rebase_out=$(git rebase --onto "origin/$UPSTREAM_BRANCH" "$base" 2>&1); then
+            git rebase --abort || true
+            echo "$rebase_out"
+            upstream_short=$(git rev-parse --short "origin/$UPSTREAM_BRANCH")
+            echo "::warning::$BRANCH: 无法 rebase 到当前 $UPSTREAM_BRANCH"
+            notify "$BRANCH: baseline rebase failed" \
+              "$(printf '%s\n\n%s\n\n```\n%s\n```' \
+                "\`$BRANCH\` 无法 rebase 到 \`$UPSTREAM_BRANCH@$upstream_short\`，分支没有推送。基线冲突需要人处理。" \
+                "rebase 输出尾部：" \
+                "$(printf '%s' "$rebase_out" | tail -15)")" \
+              "$BRANCH: baseline"
+            exit 0
+          fi
 
           # 两条判据，和 pkgs/README.md 里加包的流程一致：IFD 关掉能出 drv，
           # 然后真的构建（测试一起跑）。构建产物直接进 mtul。
@@ -260,6 +284,7 @@ jobs:
                  (builtins.fromJSON ''$names'')")
           echo "updatable: $updatable"
 
+          lease_tip=$old_tip
           for pkg in $(jq -r '.[]' <<< "$updatable"); do
             old=$(nix-instantiate --eval --raw -A "$pkg.version")
             before=$(git rev-parse HEAD)
@@ -302,13 +327,14 @@ jobs:
             fi
             new=$(nix-instantiate --eval --raw -A "$pkg.version")
             git add -A pkgs
-            tree=$(git write-tree)
-            tag="ci-failed/$BRANCH/$tree"
-            # 这个 tree 已经试过并失败，不再重试；分支或包一变 tree 就变。
+            content=$(git diff --cached --binary "origin/$UPSTREAM_BRANCH" | git hash-object --stdin)
+            tag="ci-failed/$BRANCH/$pkg/$content"
+            # 这个候选已经试过并失败，不再自动重试。hash 不包含 upstream 基线：
+            # 单纯 rebase 不会绕过人工闸门。包内容或版本变化才会产生新 hash。
             if git ls-remote --exit-code "$FORK_URL" "refs/tags/$tag" >/dev/null 2>&1; then
               echo "::warning::$pkg $new 上次构建失败过（$tag），跳过"
               # 不通知：这是 backoff 的预期行为，annotation 已经写进 run 摘要，
-              # 那棵树对应的失败 issue 本来就开着；每轮通知等于每小时一条。
+              # 该候选对应的失败 issue 本来就开着；每轮通知等于每小时一条。
               git reset -q --hard "$before"
               continue
             fi
@@ -323,11 +349,13 @@ jobs:
               continue
             fi
             git commit -q -m "$pkg: $old -> $new"
-            if git push "$FORK_URL" "HEAD:refs/heads/$BRANCH"; then
+            if git push --force-with-lease="refs/heads/$BRANCH:$lease_tip" \
+              "$FORK_URL" "HEAD:refs/heads/$BRANCH"; then
               echo "pushed $pkg: $old -> $new"
+              lease_tip=$(git rev-parse HEAD)
               close_issues "$pkg" "\`$pkg\` 已经推到 $new。"
-              # 这个分支以前的失败标记已经没意义了。
-              for t in $(git ls-remote --tags "$FORK_URL" "refs/tags/ci-failed/$BRANCH/*" \
+              # 只清理这个包已经解决的失败标记，别抹掉同分支其他包的人工闸门。
+              for t in $(git ls-remote --tags "$FORK_URL" "refs/tags/ci-failed/$BRANCH/$pkg/*" \
                 | awk '{print $2}' | sed 's|^refs/tags/||'); do
                 git push "$FORK_URL" --delete "refs/tags/$t" || true
               done
