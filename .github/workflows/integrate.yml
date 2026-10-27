@@ -103,12 +103,21 @@ jobs:
           fi
           echo "branches: ${BRANCHES[*]}"
 
-          # 只取这些分支自己的对象，不碰 fork 的 nixpkgs 历史。
+          # 只取这些分支自己的对象，不碰 fork 的 nixpkgs 历史。必须继续用
+          # blob:none：无 filter 的 fetch 会拿 branch tip 去补齐 blobless
+          # upstream cache 的 blob，实测 180 秒只传了不到 1 MB。
           refspecs=()
           for b in "${BRANCHES[@]}"; do
             refspecs+=("+refs/heads/$b:refs/remotes/fork/$b")
           done
-          git fetch --no-tags "https://github.com/$FORK" "${refspecs[@]}"
+          git remote add fork "https://github.com/$FORK" 2>/dev/null \
+            || git remote set-url fork "https://github.com/$FORK"
+          git config remote.fork.promisor true
+          git config remote.fork.partialclonefilter blob:none
+          git fetch --no-tags --filter=blob:none fork "${refspecs[@]}"
+
+          # merge-tree 和最后的 checkout 只按需取缺少的 blobs。
+          git config extensions.partialClone fork
 
           git checkout -q -B "$INTEGRATION" "origin/$UPSTREAM_BRANCH"
           integration_tip=$(git rev-parse HEAD)
