@@ -1,7 +1,7 @@
-# aw-server-rust and aw-webui follow the 0.14.1 release. The Python components
-# stay pinned to the 0.13.2 bundle: 0.14.1 rewrote aw-notify from Python to Rust
-# (aw-notify-rs), so ${sources}/aw-notify no longer contains a Python package.
-# Move them over once the Rust notifier is packaged.
+# aw-server-rust, aw-client-rust and aw-webui follow the 0.14.1 release. The
+# Python components stay pinned to the 0.13.2 bundle: 0.14.1 rewrote aw-notify
+# from Python to Rust (aw-notify-rs), so ${sources}/aw-notify no longer contains
+# a Python package. Move them over once the Rust notifier is packaged.
 {
   lib,
   fetchFromGitHub,
@@ -195,6 +195,36 @@ rec {
       homepage = "https://github.com/ActivityWatch/aw-notify";
       maintainers = with lib.maintainers; [ huantian ];
       mainProgram = "aw-notify";
+      license = lib.licenses.mpl20;
+    };
+  };
+
+  aw-client-rust = rustPlatform.buildRustPackage {
+    pname = "aw-client-rust";
+    version = serverVersion;
+
+    src = "${serverSources}/aw-server-rust";
+
+    buildAndTestSubdir = "aw-client-rust";
+    buildFeatures = [ "cli" ];
+    checkFeatures = [ "cli" ];
+
+    cargoHash = "sha256-x6Qp8nW3EbQbeVPrvV1UQdKMkU83qachrtNOGh30HWw=";
+
+    # See aw-server-rust: cargo-auditable panics on the workspace's
+    # `cli = [ "dep:clap" ]` features.
+    auditable = false;
+
+    doCheck = false;
+
+    passthru.updateScript = ./update.sh;
+
+    meta = {
+      description = "Command-line client for ActivityWatch, written in Rust";
+      homepage = "https://github.com/ActivityWatch/aw-server-rust";
+      maintainers = with lib.maintainers; [ huantian ];
+      mainProgram = "aw-client";
+      platforms = lib.platforms.linux;
       license = lib.licenses.mpl20;
     };
   };
