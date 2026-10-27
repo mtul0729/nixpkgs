@@ -10,8 +10,7 @@
 #
 # 任何一条会让腿停下来的路径（升级失败、以前构建失败被标记、这次构建失败、推送
 # 被拒）都在 fork 上开一个 update-failed 的 issue，同一个标题只开一次、摘要没变就
-# 不重复评论。包推上去之后自动关掉；如果它其实已经在上游最新版、这一轮无事可推，
-# 也在那里关掉 —— 否则偶发错误留下的 issue 会一直挂到上游发下一个版本。
+# 不重复评论；包推上去之后自动关掉。
 #
 # 手动触发：
 #   gh workflow run update.yml -R mtul0729/nixpkgs
@@ -275,13 +274,6 @@ jobs:
             fi
             if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
               echo "$pkg: already at $old"
-              # 分支已经在上游最新版，这一轮无事可做 —— 上一轮留下的 issue 到
-              # 这里就该收掉了。它可能是 nix-update 抓 release feed 时吃了 502
-              # 这类偶发错误，也可能是上一次推送其实成功了、只是 close_issues
-              # 那一下没打成。这两种情况都不会再走到推送那一步，issue 只能在这
-              # 里关；否则它就一直挂着，直到上游发了下一个版本才被顺手带走。
-              close_issues "$pkg" \
-                "\`$pkg\` 已经在 $old，也就是上游的最新版，这一轮没有需要推送的改动。这条 issue 记录的那次失败没有复现。"
               continue
             fi
             new=$(nix-instantiate --eval --raw -A "$pkg.version")
