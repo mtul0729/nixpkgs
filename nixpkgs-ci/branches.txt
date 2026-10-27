@@ -13,7 +13,7 @@ pkg/dashbeam
 pkg/magpie: magpie-cli
 pkg/helix
 pkg/cosmic-desktop-mcp
-pkg/activitywatch: aw-server-rust
+pkg/activitywatch: aw-server-rust,aw-client-rust
 pkg/fcitx5-vinput
 pkg/siyuan: siyuan,siyuan-preview
 pkg/disktree
