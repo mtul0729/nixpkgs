@@ -66,7 +66,12 @@ workspace, so a branch never receives a commit that has not been built:
 
 1. `nix-update -u <pkg> --format` — a package opts in by declaring `passthru.updateScript`.
    `--format` calls `nixfmt` out of `PATH`, which `nix-update` does not bring along, so
-   the job installs `nixfmt-rs` next to it;
+   the job installs `nixfmt-rs` next to it. `nix-update` fetches a release feed with a
+   single unretried request, so a 502 or a dropped connection fails the leg outright; the
+   step is retried three times, ten seconds apart, resetting to the pre-update tree between
+   attempts because a failed run may already have rewritten `package.nix`. Only this step
+   is retried — the build below is deterministic, and retrying it would burn CI time and
+   hide a real failure;
 2. `nix-instantiate --option allow-import-from-derivation false -A <pkg>.drvPath`, the same
    IFD check `pkgs/README.md` asks for;
 3. `nix-build -A <pkg>` inside `cachix watch-exec mtul`, so the result lands in the cache;
@@ -104,6 +109,10 @@ labelled `update-failed`: `nix-update` failed, a previous build failed and its
 branch moved. One issue per branch-and-package-and-reason; a repeat with the same summary
 adds nothing, a change of version appends one comment. Pushing the package closes every
 `update-failed` issue that names it.
+
+An issue is therefore a report about a failure that survived the retries, not about the
+first dropped request. That distinction is the point of retrying in the first place: a
+transient failure that never becomes an issue leaves nothing to close later.
 
 ### integrate
 
