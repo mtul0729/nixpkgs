@@ -7,10 +7,10 @@
     "ocrAssets": "ocr-assets.json"
   },
   "preview": {
-    "version": "3.8.8",
-    "src": "sha256-sa4p6shcbSYKXE7Zp7XilmqcAOp4kNKhoQNtl4zPpyE=",
-    "vendorHash": "sha256-pc1HFKp2TQeCBJHdc2lnQwlpxg8IJ9CKnPoYe+C6cKA=",
-    "pnpmDeps": "sha256-e+qyTEL2jfgJENleWC3Zk7C98rRFjUE9rdZGjWmaOpU=",
+    "version": "3.8.9-beta.5",
+    "src": "sha256-Ds6RdE0XoCGl2aGac/1bwwFJ9VKFYQOpMtKmiTrN5x8=",
+    "vendorHash": "sha256-+/5yfqqaIelH4uVgW94jbIqvBfn2wHAjwRxT0Q97YUs=",
+    "pnpmDeps": "sha256-oY0wVe92Ri73ZRIB0/Rnx3jqjIscl3fIi1EMJD7JH2w=",
     "ocrAssets": "ocr-assets-preview.json"
   }
 }
