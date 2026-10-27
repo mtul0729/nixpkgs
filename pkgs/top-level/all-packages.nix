@@ -7886,6 +7886,7 @@ with pkgs;
   inherit (callPackage ../applications/office/activitywatch { })
     aw-qt
     aw-notify
+    aw-client-rust
     aw-server-rust
     aw-watcher-afk
     aw-watcher-window
