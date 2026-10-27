@@ -12,6 +12,9 @@
 # 被拒）都在 fork 上开一个 update-failed 的 issue，同一个标题只开一次、摘要没变就
 # 不重复评论；包推上去之后自动关掉。
 #
+# 升级这一步会重试：nix-update 抓 release feed 只请求一次，一个 502 就能把腿打掉。
+# 网络抖动在重试里消化掉，issue 留给重试也救不回来的失败。
+#
 # 手动触发：
 #   gh workflow run update.yml -R mtul0729/nixpkgs
 #   gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/helix
@@ -260,16 +263,37 @@ jobs:
           for pkg in $(jq -r '.[]' <<< "$updatable"); do
             old=$(nix-instantiate --eval --raw -A "$pkg.version")
             before=$(git rev-parse HEAD)
-            if ! out=$(nix-update -u "$pkg" --format 2>&1); then
+            # nix-update 抓 releases.atom 只请求一次 —— 源码里没有重试，一个 502
+            # 就直接抛出来，整条腿失败并开 issue。网络抖动是常态，重试比事后收拾
+            # 一条挂死的 issue 便宜得多。只重试这一步：后面的 verify 是确定性
+            # 构建，重试它只会浪费 CI 时间，还会掩盖真问题。
+            attempts=3
+            ok=false
+            for attempt in $(seq 1 "$attempts"); do
+              if out=$(nix-update -u "$pkg" --format 2>&1); then
+                ok=true
+                break
+              fi
+              # nix-update 可能在死之前已经改过 package.nix；重试必须从同一棵树
+              # 出发，否则第二次是在半成品上接着改。最后一次也走这里，所以失败
+              # 退出时工作区和进循环前一致。
+              git reset -q --hard "$before"
+              if [ "$attempt" -lt "$attempts" ]; then
+                # 普通的 echo，不是 ::warning:: —— 重试成功的轮次不该在 run 摘要
+                # 里留警告，那是「这条腿出事了」的通道。
+                echo "$pkg: 第 $attempt 次 nix-update 失败，$((attempt * 10))s 后重试"
+                sleep $((attempt * 10))
+              fi
+            done
+            if [ "$ok" = false ]; then
               echo "$out"
-              echo "::warning::$BRANCH: $pkg 升级失败，跳过"
+              echo "::warning::$BRANCH: $pkg 升级失败（试了 $attempts 次），跳过"
               notify "$BRANCH: $pkg 升级失败" \
                 "$(printf '%s\n\n%s\n\n```\n%s\n```' \
-                  "\`$pkg\` 停在 $old：\`nix-update\` 失败了，这一轮没有往 \`$BRANCH\` 推任何东西。" \
-                  "\`nix-update\` 的输出尾部：" \
+                  "\`$pkg\` 停在 $old：\`nix-update\` 连续 $attempts 次失败，这一轮没有往 \`$BRANCH\` 推任何东西。" \
+                  "\`nix-update\` 最后一次的输出尾部：" \
                   "$(printf '%s' "$out" | tail -15)")" \
                 "$BRANCH: $pkg"
-              git reset -q --hard "$before"
               continue
             fi
             if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
