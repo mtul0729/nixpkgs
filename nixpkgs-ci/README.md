@@ -82,17 +82,19 @@ a commit that has not been built:
 5. only then `git commit` and a force-with-lease push of the candidate.
 
 The baseline is a build input, not a branch that has to follow `nixos-unstable` every
-hour. If `nix-update` finds nothing, the candidate is discarded and the branch does not
-move; `integration` still gets today's baseline when it is regenerated. When a package
+hour. There is no separate baseline updater: a successful package update carries the
+baseline forward; otherwise the branch stays where it is and a human decides whether to
+move it. `integration` still gets today's baseline when it is regenerated. When a package
 does update, the baseline move and the package change are verified and pushed together.
 
 If the build fails, nothing is committed. The leg pushes a
-`ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the candidate's effective
-diff from upstream, not the baseline tree. A later `nixos-unstable` commit therefore does
-not bypass the tag. The same candidate is never retried automatically: deleting the tag,
-changing the package, or choosing a different baseline is a human decision. A new version
-or a package edit changes the hash and forms a new candidate. A successful update deletes
-only that package's failure tags.
+`ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers that package's effective
+diff from upstream, not the baseline tree or another package on the same branch. A later
+`nixos-unstable` commit or an update to a sibling package therefore does not bypass the
+tag. The same candidate is never retried automatically: deleting the tag, changing the
+package, or choosing a different baseline is a human decision. A new version or a package
+edit changes the hash and forms a new candidate. A successful update deletes only that
+package's failure tags.
 
 `-f only=pkg/helix` limits a run to those branches. `-f verify_only=true` still creates
 and rebases the candidate, but skips `nix-update` and only runs the two checks: that is
