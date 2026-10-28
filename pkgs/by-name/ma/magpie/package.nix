@@ -15,10 +15,10 @@
 #                   names the wrapper and is repointed after an upgrade, one
 #                   instance lock covers every version, and it writes no
 #                   entry into $HOME.
-#   no-double-tray-item-cosmic.patch
-#                   COSMIC keeps the item it filed under the well-known name
-#                   after that name is released, so registering again adds a
-#                   second icon instead of taking its place.
+#   autostart-xdg.patch, tray-watcher.patch
+#                   Validation-only patches from the contributor branches on
+#                   #3372 and #2804. They make a package's system autostart
+#                   entry and COSMIC's StatusNotifierWatcher work as intended.
 {
   lib,
   stdenv,
@@ -59,8 +59,9 @@ buildGoModule (finalAttrs: {
 
   # See nix-support.patch for the Nix-specific behaviour.
   patches = [
+    ./autostart-xdg.patch
     ./nix-support.patch
-    ./no-double-tray-item-cosmic.patch
+    ./tray-watcher.patch
   ];
 
   env = {
