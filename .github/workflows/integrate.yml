@@ -66,6 +66,19 @@ jobs:
             "+refs/heads/$UPSTREAM_BRANCH:refs/remotes/origin/$UPSTREAM_BRANCH"
           git -C nixpkgs checkout -q -f -B "$UPSTREAM_BRANCH" "origin/$UPSTREAM_BRANCH"
 
+      # Squash exits non-zero after pushing integration when one branch conflicts.
+      # Install the build tools before that point so the always() build still has
+      # Cachix available when the squash step reports that conflict.
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: mtul
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
       # GITHUB_TOKEN 推不了：integration 分支第一次出现时，整棵 nixpkgs 树都算
       # "新增的 workflow 文件"，需要 workflow 权限。PUSH_TOKEN 是有 workflow
       # scope 的 PAT。
@@ -189,16 +202,6 @@ jobs:
             echo "::error::以下分支没能合并，integration 里暂时没有它们：${failed[*]}"
             exit 1
           fi
-
-      - uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-
-      - uses: cachix/cachix-action@v17
-        with:
-          name: mtul
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       # 漂移检查：分支各自验证时用的是自己的 base，这里是今天的 unstable。
       # drv 没变就是纯下载；变了说明上游动了依赖，必须能编过。
