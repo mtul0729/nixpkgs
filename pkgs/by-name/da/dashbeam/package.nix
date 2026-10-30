@@ -32,7 +32,9 @@ rustPlatform.buildRustPackage (finalAttrs: {
   src = fetchFromGitHub {
     owner = "tonyantony300";
     repo = "dashbeam";
-    tag = "v${finalAttrs.version}";
+    # A tag is a valid rev. Using it here keeps nix-update from treating
+    # fetchFromGitHub's refs/tags/vX.Y.Z as changed on every no-op run.
+    rev = "v${finalAttrs.version}";
     hash = "sha256-5dcG2Hw+dI/UGY0wbxJW3AGq29Wpx+FHh+s90667Lco=";
   };
 
