@@ -14,7 +14,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   src = fetchFromGitHub {
     owner = "mtul0729";
     repo = "cosmic-desktop-mcp";
-    tag = "v${finalAttrs.version}";
+    rev = "v${finalAttrs.version}";
     hash = "sha256-w5zQbDbQ3xByiwj3aNylBRTDMk0QoC4BABkyUEaNuvU=";
   };
 
