@@ -49,7 +49,7 @@ buildGoModule (finalAttrs: {
   src = fetchFromGitHub {
     owner = "yetone";
     repo = "magpie";
-    tag = "v${finalAttrs.version}";
+    rev = "v${finalAttrs.version}";
     hash = "sha256-QfbgVqIdSu68N3zvwwGhWvbcNm6rmdE01OAYHqIr5Xc=";
   };
 
