@@ -9,16 +9,16 @@
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "cosmic-desktop-mcp";
-  version = "0.2.1";
+  version = "0.2.2";
 
   src = fetchFromGitHub {
     owner = "mtul0729";
     repo = "cosmic-desktop-mcp";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-MQgmAJQO+3qgOdcu/kFgmlUQULCF5X2CuA7+IdWC45M=";
+    hash = "sha256-F0CZWHHYW8uwLb5V5fLZmoVjxqg4qxL3KKb2JaDZIV4=";
   };
 
-  cargoHash = "sha256-KqwzhTaTFg6TyN3XiEpPlDMkIXzt7BdV4sVPPSMKN30=";
+  cargoHash = "sha256-4EqaMUh7PaFHV57bdvp1YmBHDDMZupCSBHMvPXLCfz0=";
 
   # The test suite needs a running COSMIC session.
   doCheck = false;
