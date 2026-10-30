@@ -2,7 +2,7 @@
 # Upstream's install.sh ships an FHS-linked prebuilt binary, so this builds
 # from source; `production` is the GUI and `nogui` the terminal build.
 #
-# Three things are Nix-specific, each explained where it happens:
+# Local choices, each explained where it happens:
 #
 #   tags            Upstream's Makefile adds gtk3 on Linux for older
 #                   distributions. It is not used here: under a COSMIC
@@ -15,10 +15,10 @@
 #                   names the wrapper and is repointed after an upgrade, one
 #                   instance lock covers every version, and it writes no
 #                   entry into $HOME.
-#   no-double-tray-item-cosmic.patch
-#                   COSMIC keeps the item it filed under the well-known name
-#                   after that name is released, so registering again adds a
-#                   second icon instead of taking its place.
+#   tray-watcher.patch
+#                   Register the tray item again only when the watcher dropped
+#                   it. This is the general fix for COSMIC (upstream #2804),
+#                   currently carried from an upstream candidate branch.
 {
   lib,
   stdenv,
@@ -60,7 +60,7 @@ buildGoModule (finalAttrs: {
   # See nix-support.patch for the Nix-specific behaviour.
   patches = [
     ./nix-support.patch
-    ./no-double-tray-item-cosmic.patch
+    ./tray-watcher.patch
   ];
 
   env = {
@@ -157,7 +157,7 @@ buildGoModule (finalAttrs: {
       install -Dm644 LICENSE "$out/share/licenses/${finalAttrs.pname}/LICENSE"
     '';
 
-  # wrapGAppsHook3 only collects gappsWrapperArgs; wrapping happens below.
+  # wrapGAppsHook4 only collects gappsWrapperArgs; wrapping happens below.
   dontWrapGApps = withGui && stdenv.hostPlatform.isLinux;
 
   postFixup =
