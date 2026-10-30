@@ -87,6 +87,15 @@ baseline forward; otherwise the branch stays where it is and a human decides whe
 move it. `integration` still gets today's baseline when it is regenerated. When a package
 does update, the baseline move and the package change are verified and pushed together.
 
+A release-tag source that uses the default `nix-update-script` should pass its tag as
+`rev = "v${version}"`, not `tag = ...`, while CI runs `nix-update` 1.16.0.
+`fetchFromGitHub` records both `tag = "vX"` and `rev = "refs/tags/vX"`; 1.16.0 compares
+`package.rev or package.tag` with the feed's `vX`, so the mismatch turns every no-op run
+into a fake `vX -> vX` update and recomputes the source and dependency hashes.
+`rev = "vX"` fetches the same archive contents and fixed-output path, but compares equal.
+Upstream's unreleased `nix-update` reverses the preference; revisit this rule when the CI
+pin moves.
+
 If the build fails, nothing is committed. The leg pushes a
 `ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the package version and its
 definition directory's effective diff from upstream, not the baseline tree or another
