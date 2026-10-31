@@ -1,0 +1,219 @@
+# Candidate upstream fix for https://github.com/yetone/magpie/issues/2804,
+# from skygunner/magpie commit 7256f0d91a64c285831e38172d81906a31d890a9.
+# It is not merged upstream yet, so it stays beside the package until it is.
+diff --git a/internal/gui/bus_linux.go b/internal/gui/bus_linux.go
+index 9c2b1cb8..0c882ed2 100644
+--- a/internal/gui/bus_linux.go
++++ b/internal/gui/bus_linux.go
+@@ -4,6 +4,7 @@ import (
+ 	"fmt"
+ 	"log"
+ 	"os"
++	"strings"
+ 	"time"
+ 
+ 	"github.com/godbus/dbus/v5"
+@@ -38,15 +39,27 @@ func dropTrayName() {
+ 				return
+ 			}
+ 			// A watcher that filed the item under the name it was given up
+-			// by drops it with the name (noctalia, #2421): register again by
+-			// the connection's own name, which one that filed it so already
+-			// takes as the item it has.
+-			if own := conn.Names(); len(own) > 0 {
+-				w := conn.Object("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher")
+-				if c := w.Call("org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem", 0, own[0]); c.Err != nil {
+-					log.Println("tray: register", own[0]+":", c.Err)
++			// by drops it with the name (noctalia, #2421) and needs the
++			// registration again; one that keeps the item has it filed
++			// under the connection's own name already (COSMIC, #2804), and
++			// registering it again is a second icon, not the same one
++			// restored.
++			own := conn.Names()
++			if len(own) == 0 {
++				return
++			}
++			w := conn.Object("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher")
++			var items []string
++			if v, err := w.GetProperty("org.kde.StatusNotifierWatcher.RegisteredStatusNotifierItems"); err == nil && v.Store(&items) == nil {
++				for _, it := range items {
++					if it == own[0] || strings.HasPrefix(it, own[0]+"/") {
++						return
++					}
+ 				}
+ 			}
++			if c := w.Call("org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem", 0, own[0]); c.Err != nil {
++				log.Println("tray: register", own[0]+":", c.Err)
++			}
+ 			return
+ 		}
+ 		time.Sleep(500 * time.Millisecond)
+diff --git a/internal/gui/bus_linux_test.go b/internal/gui/bus_linux_test.go
+new file mode 100644
+index 00000000..ce8ac265
+--- /dev/null
++++ b/internal/gui/bus_linux_test.go
+@@ -0,0 +1,163 @@
++package gui
++
++import (
++	"bufio"
++	"fmt"
++	"os"
++	"os/exec"
++	"strings"
++	"sync"
++	"testing"
++
++	"github.com/godbus/dbus/v5"
++)
++
++// trayReg is one item a watcher was handed: the name it is filed under and
++// the entry it shows as.
++type trayReg struct{ name, entry string }
++
++// fakeTrayWatcher is a StatusNotifierWatcher on a private session bus, with
++// the two shapes magpie meets: one that files the item under the caller's own
++// name and keeps it when the well-known name goes (COSMIC, #2804), and one
++// that files it under the name it was handed and drops it with that name
++// (noctalia, #2421).
++type fakeTrayWatcher struct {
++	conn   *dbus.Conn // asks the bus which names are still owned
++	mu     sync.Mutex
++	byName bool // file the item under the caller's own name
++	filed  []trayReg
++}
++
++func (w *fakeTrayWatcher) reset(byName bool) {
++	w.mu.Lock()
++	defer w.mu.Unlock()
++	w.byName, w.filed = byName, nil
++}
++
++// RegisterStatusNotifierItem files a registration the way the watcher it
++// models does: COSMIC keys it on the caller's own name, so a registration by
++// a well-known name shows as "<sender>/StatusNotifierItem" and one by a
++// unique name as that name (the two entries in #2804).
++func (w *fakeTrayWatcher) RegisterStatusNotifierItem(service string, sender dbus.Sender) *dbus.Error {
++	w.mu.Lock()
++	defer w.mu.Unlock()
++	reg := trayReg{name: service, entry: service + "/StatusNotifierItem"}
++	if w.byName {
++		reg.name = string(sender)
++		if strings.HasPrefix(service, ":") {
++			reg.entry = service
++		} else {
++			reg.entry = string(sender) + "/StatusNotifierItem"
++		}
++	}
++	w.filed = append(w.filed, reg)
++	return nil
++}
++
++// Get answers RegisteredStatusNotifierItems. A watcher that filed an item
++// under a name the bus no longer owns dropped it with the name.
++func (w *fakeTrayWatcher) Get(iface, property string) (dbus.Variant, *dbus.Error) {
++	if iface != "org.kde.StatusNotifierWatcher" || property != "RegisteredStatusNotifierItems" {
++		return dbus.Variant{}, dbus.NewError("org.freedesktop.DBus.Error.UnknownProperty", nil)
++	}
++	w.mu.Lock()
++	defer w.mu.Unlock()
++	items := []string{}
++	for _, r := range w.filed {
++		if strings.HasPrefix(r.name, ":") || w.owned(r.name) {
++			items = append(items, r.entry)
++		}
++	}
++	return dbus.MakeVariant(items), nil
++}
++
++func (w *fakeTrayWatcher) owned(name string) bool {
++	var owner string
++	return w.conn.BusObject().Call("org.freedesktop.DBus.GetNameOwner", 0, name).Store(&owner) == nil
++}
++
++// newTrayWatcherBus starts a session bus of the test's own and owns
++// org.kde.StatusNotifierWatcher on it.
++func newTrayWatcherBus(t *testing.T) *fakeTrayWatcher {
++	t.Helper()
++	bin, err := exec.LookPath("dbus-daemon")
++	if err != nil {
++		t.Skip("dbus-daemon is required for a session bus of the test's own")
++	}
++	cmd := exec.Command(bin, "--session", "--nofork", "--print-address=1")
++	stdout, err := cmd.StdoutPipe()
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := cmd.Start(); err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
++	sc := bufio.NewScanner(stdout)
++	if !sc.Scan() {
++		t.Fatalf("no private bus address: %v", sc.Err())
++	}
++	t.Setenv("DBUS_SESSION_BUS_ADDRESS", sc.Text())
++
++	conn, err := dbus.ConnectSessionBus()
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { conn.Close() })
++	w := &fakeTrayWatcher{conn: conn}
++	if err := conn.Export(w, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher"); err != nil {
++		t.Fatal(err)
++	}
++	if err := conn.Export(w, "/StatusNotifierWatcher", "org.freedesktop.DBus.Properties"); err != nil {
++		t.Fatal(err)
++	}
++	if reply, err := conn.RequestName("org.kde.StatusNotifierWatcher", dbus.NameFlagDoNotQueue); err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
++		t.Fatalf("claim the watcher name: %v %v", reply, err)
++	}
++	return w
++}
++
++// dropTrayName gives up the name Wails' tray took and registers the item
++// again under the connection's own name. A watcher that already lists the
++// item under that name keeps it through the release: registering again is a
++// second magpie in the panel (#2804), while a watcher that dropped it with
++// the name still needs the registration (#2421).
++func TestTrayReleasedNameKeepsOneItem(t *testing.T) {
++	w := newTrayWatcherBus(t)
++	conn, err := dbus.SessionBus()
++	if err != nil {
++		t.Fatal(err)
++	}
++	trayName := fmt.Sprintf("org.kde.StatusNotifierItem-%d-1", os.Getpid())
++	obj := conn.Object("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher")
++	for _, c := range []struct {
++		name   string
++		byName bool
++	}{
++		{"a watcher that keeps the item under our own name", true},
++		{"a watcher that drops it with the name", false},
++	} {
++		t.Run(c.name, func(t *testing.T) {
++			w.reset(c.byName)
++			if reply, err := conn.RequestName(trayName, 0); err != nil || reply != dbus.RequestNameReplyPrimaryOwner {
++				t.Fatalf("take the tray name: %v %v", reply, err)
++			}
++			// the tray registers as Wails' does, by the name it took
++			if call := obj.Call("org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem", 0, trayName); call.Err != nil {
++				t.Fatal("register:", call.Err)
++			}
++			dropTrayName()
++			v, err := obj.GetProperty("org.kde.StatusNotifierWatcher.RegisteredStatusNotifierItems")
++			if err != nil {
++				t.Fatal("read items:", err)
++			}
++			var items []string
++			if err := v.Store(&items); err != nil {
++				t.Fatal("read items:", err)
++			}
++			if len(items) != 1 {
++				t.Fatalf("the panel lists %d magpie items %q after the name was released, want 1", len(items), items)
++			}
++		})
++	}
++}
