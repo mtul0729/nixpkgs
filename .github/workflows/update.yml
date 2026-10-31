@@ -132,7 +132,7 @@ jobs:
       # 包都以 FileNotFoundError 收场，然后被当成「升级失败，跳过」。nixfmt-rs 提供
       # 的可执行文件就叫 nixfmt，输出和 Haskell 原版逐字节相同。
       - name: Install nix-update and nixfmt
-        run: nix profile install nixpkgs#nix-update nixpkgs#nixfmt-rs
+        run: nix profile add nixpkgs#nix-update nixpkgs#nixfmt-rs
 
       - name: Upgrade and verify ${{ matrix.branch }}
         env:
