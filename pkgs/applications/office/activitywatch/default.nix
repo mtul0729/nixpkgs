@@ -1,3 +1,7 @@
+# aw-server-rust, aw-client-rust and aw-webui follow the 0.14.1 release. The
+# Python components stay pinned to the 0.13.2 bundle: 0.14.1 rewrote aw-notify
+# from Python to Rust (aw-notify-rs), so ${sources}/aw-notify no longer contains
+# a Python package. Move them over once the Rust notifier is packaged.
 {
   lib,
   fetchFromGitHub,
@@ -14,6 +18,8 @@
   replaceVars,
   nodejs_22,
   buildNpmPackage,
+  stdenv,
+  removeReferencesTo,
 }:
 
 let
@@ -23,6 +29,15 @@ let
     repo = "activitywatch";
     rev = "v${version}";
     sha256 = "sha256-Z3WAg3b1zN0nS00u0zIose55JXRzQ7X7qy39XMY7Snk=";
+    fetchSubmodules = true;
+  };
+
+  serverVersion = "0.14.1";
+  serverSources = fetchFromGitHub {
+    owner = "ActivityWatch";
+    repo = "activitywatch";
+    rev = "v${serverVersion}";
+    sha256 = "sha256-Euom8p8pdwPRX7C4FuUZYp+6mhFaWIeGcVR4xOi+zXE=";
     fetchSubmodules = true;
   };
 in
@@ -187,18 +202,53 @@ rec {
     };
   };
 
+  aw-client-rust = rustPlatform.buildRustPackage {
+    pname = "aw-client-rust";
+    version = serverVersion;
+
+    src = "${serverSources}/aw-server-rust";
+
+    buildAndTestSubdir = "aw-client-rust";
+    buildFeatures = [ "cli" ];
+    checkFeatures = [ "cli" ];
+
+    cargoHash = "sha256-x6Qp8nW3EbQbeVPrvV1UQdKMkU83qachrtNOGh30HWw=";
+
+    # See aw-server-rust: cargo-auditable panics on the workspace's
+    # `cli = [ "dep:clap" ]` features.
+    auditable = false;
+
+    doCheck = false;
+
+    passthru.updateScript = ./update.sh;
+
+    meta = {
+      description = "Command-line client for ActivityWatch, written in Rust";
+      homepage = "https://github.com/ActivityWatch/aw-server-rust";
+      maintainers = with lib.maintainers; [ huantian ];
+      mainProgram = "aw-client";
+      platforms = lib.platforms.linux;
+      license = lib.licenses.mpl20;
+    };
+  };
+
   aw-server-rust = rustPlatform.buildRustPackage {
     pname = "aw-server-rust";
-    inherit version;
+    version = serverVersion;
 
-    src = "${sources}/aw-server-rust";
+    src = "${serverSources}/aw-server-rust";
 
-    cargoHash = "sha256-E89E/LWBPHtb6vX94swodmE+UrWMrzQnm8AO5GeyuoA=";
+    cargoHash = "sha256-x6Qp8nW3EbQbeVPrvV1UQdKMkU83qachrtNOGh30HWw=";
+
+    # cargo-auditable 0.7.6 panics on this workspace's `cli = [ "dep:clap" ]`
+    # features ("does not have feature clap" during cargo metadata).
+    auditable = false;
 
     patches = [
-      # Override version string with hardcoded value as it may be outdated upstream.
+      # aw-server's Cargo.toml still says 0.14.0 at the 0.14.1 tag; report the
+      # release version from the API instead.
       (replaceVars ./override-version.patch {
-        version = sources.rev;
+        version = "v${serverVersion}";
       })
     ];
 
@@ -213,12 +263,25 @@ rec {
       rust-jemalloc-sys
     ];
 
-    env.AW_WEBUI_DIR = aw-webui;
+    # build.rs hands this path to rust-embed, which compiles the frontend into
+    # the binary; there is no runtime asset directory.
+    env.AW_WEBUI_DIR = "${aw-webui}";
 
     preCheck = ''
       # Fake home folder for tests that use ~/.cache and ~/.local/share
       export HOME="$TMPDIR"
     '';
+
+    # One of the crates bakes the compiler it was built with into aw-sync.
+    # Nothing reads it at runtime, but the reference drags gcc (~280 MiB) into
+    # the closure of every machine that runs the server.
+    postFixup = ''
+      for f in $out/bin/*; do
+        ${removeReferencesTo}/bin/remove-references-to -t ${stdenv.cc} "$f"
+      done
+    '';
+
+    passthru.updateScript = ./update.sh;
 
     meta = {
       description = "High-performance implementation of the ActivityWatch server, written in Rust";
@@ -232,20 +295,24 @@ rec {
 
   aw-webui = buildNpmPackage {
     pname = "aw-webui";
-    inherit version;
+    version = serverVersion;
 
-    src = "${sources}/aw-server-rust/aw-webui";
+    src = "${serverSources}/aw-server-rust/aw-webui";
 
     nodejs = nodejs_22;
-    npmDepsHash = "sha256-fPk7UpKuO3nEN1w+cf9DIZIG1+XRUk6PJfVmtpC30XE=";
+    npmDepsHash = "sha256-8/eM6t9bOdqXkCTgqF4tcDwnTXdcq1jPL6Wayijt+is=";
 
     makeCacheWritable = true;
     npmFlags = [ "--legacy-peer-deps" ];
 
     patches = [
+      # 0.14.1 ships two over-escaped regex assertions in queries.test.node.ts
+      # that fail against the code at the tag itself; fix the escaping.
+      ./queries-test-escaping.patch
+
       # Hardcode version to avoid the need to have the Git repo available at build time.
       (replaceVars ./commit-hash.patch {
-        commit_hash = sources.rev;
+        commit_hash = serverSources.rev;
       })
     ];
 
