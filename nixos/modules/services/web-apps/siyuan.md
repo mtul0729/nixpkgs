@@ -59,6 +59,20 @@ The system service disables the kernel's optional compatibility listener on
 Set {option}`services.siyuan.port` to `6806` if the server itself should own
 that endpoint.
 
+The kernel exits with status 0 when the web UI imports settings or calls
+`/api/system/exit`, expecting a desktop client to restart it. The service uses
+`Restart = "always"` with exponential backoff (2 s up to 1 min), so it comes
+back on its own; five starts within five minutes leave the unit in `failed`
+instead of spinning forever. `systemctl restart siyuan` remains the manual
+equivalent. This matches the official container deployment, whose compose
+examples use `restart: unless-stopped`; systemd never restarts a unit after
+`systemctl stop`, so the two policies line up.
+
+Starting the kernel also copies `appearance/` into the workspace after the HTTP
+server is already listening, so the first requests can still 404. An
+`ExecStartPost` waits for those assets, which means `systemctl start` returns
+only once the UI is servable.
+
 ## Reverse proxy {#module-services-siyuan-reverse-proxy}
 
 When placing SiYuan behind a TLS-terminating reverse proxy, keep
