@@ -15,6 +15,8 @@ let
   args = [
     (lib.getExe' cfg.package "siyuan-kernel")
     "serve"
+    "--home-dir"
+    workspaceDir
     "--workspace"
     workspaceDir
     "--wd"
@@ -144,6 +146,7 @@ in
       siyuan = {
         isSystemUser = true;
         group = cfg.group;
+        home = workspaceDir;
       };
     };
 
