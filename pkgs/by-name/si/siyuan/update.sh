@@ -10,8 +10,10 @@ channels="$pkg_dir/channels.json"
 # nix-update sets UPDATE_NIX_ATTR_PATH when it runs this script; the attribute
 # decides which channel gets rotated.
 attr="${UPDATE_NIX_ATTR_PATH:-siyuan}"
+# The server is a thin alias for the stable client derivation, so it rotates
+# the same pins.
 case "$attr" in
-  siyuan) channel=stable ;;
+  siyuan | siyuan-server) channel=stable ;;
   siyuan-preview) channel=preview ;;
   *)
     echo "update.sh: unknown attribute '$attr'" >&2
