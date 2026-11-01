@@ -192,6 +192,28 @@ in
         fi
       '';
 
+      # Restart = "always" restarts a kernel that exits cleanly, so a broken
+      # workspace would loop every RestartSec; the default 10s/5 start limit
+      # never fills at that spacing. Give the limiter a window that does.
+      unitConfig = {
+        StartLimitIntervalSec = "5min";
+        StartLimitBurst = 5;
+      };
+
+      # The kernel starts serving before it copies appearance/ into the
+      # workspace, so a client that connects right after start still sees 404s.
+      # This runs as ExecStartPost, so `systemctl start` returns only once the
+      # UI assets are actually there.
+      postStart = ''
+        for _ in {1..300}; do
+          if [[ -s ${workspaceDir}/conf/appearance/langs/zh-CN.json ]]; then
+            exit 0
+          fi
+          sleep 0.1
+        done
+        echo "warning: appearance resources did not appear within 30s" >&2
+      '';
+
       serviceConfig = {
         Type = "simple";
         ExecStart = utils.escapeSystemdExecArgs args;
@@ -201,8 +223,14 @@ in
         StateDirectory = "siyuan";
         StateDirectoryMode = "0700";
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
-        Restart = "on-failure";
-        RestartSec = 5;
+        # The kernel exits with status 0 when the settings are imported or
+        # /api/system/exit is called, expecting its desktop client to start it
+        # again; nothing does that here, so restart on clean exits too.
+        Restart = "always";
+        # Back off instead of hitting a broken workspace every five seconds.
+        RestartSec = "2s";
+        RestartSteps = 5;
+        RestartMaxDelaySec = "1min";
 
         NoNewPrivileges = true;
         PrivateTmp = true;
