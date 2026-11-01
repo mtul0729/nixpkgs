@@ -54,6 +54,11 @@ The kernel's data directory is managed by systemd as
 {file}`/var/lib/siyuan`. Configuration written by the web UI is kept in
 {file}`/var/lib/siyuan/conf/conf.json`.
 
+The system service disables the kernel's optional compatibility listener on
+`6806`, so a desktop client on the same machine can keep using its fixed port.
+Set {option}`services.siyuan.port` to `6806` if the server itself should own
+that endpoint.
+
 ## Reverse proxy {#module-services-siyuan-reverse-proxy}
 
 When placing SiYuan behind a TLS-terminating reverse proxy, keep
