@@ -4,6 +4,7 @@
   fetchFromGitHub,
   fetchurl,
   buildGoModule,
+  symlinkJoin,
   replaceVars,
   pandoc,
   nodejs,
@@ -21,6 +22,7 @@
   go_1_26,
   onnxruntime,
   darwin,
+  nixosTests,
   channel ? "stable",
 }:
 
@@ -42,6 +44,11 @@ let
   };
 
   platformId = platformIds.${system} or (throw "Unsupported platform: ${system}");
+
+  serverPlatforms = [
+    "x86_64-linux"
+    "aarch64-linux"
+  ];
 
   # Per-channel pins. The stable channel lives in ./channels.json next to this
   # file; pkgs/by-name/si/siyuan-preview/package.nix selects the other one with
@@ -126,6 +133,60 @@ let
     }
     ln -sfn "$ortLib" "$ocrRuntimeDir/libonnxruntime.${if isDarwin then "dylib" else "so"}"
   '';
+
+  # Prepare the OCR resources in the app build directory. Both the desktop
+  # client and the server use the same app tree, so keep this setup in one
+  # place instead of maintaining two copies of the offline preparation logic.
+  ocrSetup =
+    { src, kernel }:
+    lib.optionalString hasOCR ''
+      # ---- offline built-in OCR resources (since v3.8.7) ----
+      # Upstream's beforePack hook runs ../scripts/prepare-ocr.py, which expects a
+      # writable repo layout plus network access. Mirror that layout inside the
+      # build directory, place the resources, do the hook's work here and make the
+      # hook a no-op.
+      mkdir -p ocr-layout/scripts
+      cp -r ${src}/scripts/. ocr-layout/scripts/
+      ln -s "$PWD" ocr-layout/app
+      # kernel has to be a real directory: the goModules FOD is a vendor tree
+      # (modules.txt at its root) and the worker shares the kernel's modules.
+      mkdir -p ocr-layout/kernel
+      cp -r ${src}/kernel/. ocr-layout/kernel/
+      ln -s ${kernel.goModules} ocr-layout/kernel/vendor
+
+      ${ocrModelCopies}
+      python3 ocr-layout/scripts/prepare-ocr.py
+
+      # ocr-worker: the same command and output path as upstream's
+      # prepare-ocr.py --build-worker, built offline in vendor mode.
+      mkdir -p stage/ocr/runtime/${ocrTarget}
+      ${lib.optionalString isLinux ''
+        workerOut="$PWD/stage/ocr/runtime/${ocrTarget}/siyuan-ocr"
+        (
+          cd ocr-layout/kernel
+          env CGO_ENABLED=1 GOFLAGS=-mod=vendor GOPROXY=off GOTOOLCHAIN=local \
+            GOCACHE="$PWD/../../.gocache" \
+            go build -trimpath -ldflags="-s -w" -o "$workerOut" ./ocr/cmd/ocr-worker
+        )
+      ''}
+
+      # The server serves the runtime library from the same relative path the
+      # client uses after installation.
+      ortName="libonnxruntime.${if isDarwin then "dylib" else "so"}"
+      ortLib=${lib.getLib onnxruntime}/lib/$ortName
+      test -e "$ortLib" || {
+        echo "onnxruntime library missing: $ortLib"
+        exit 1
+      }
+      ln -sfn "$ortLib" "stage/ocr/runtime/${ocrTarget}/$ortName"
+
+      # Resources are in place, so the hook has nothing left to do.
+      cat > scripts/beforePack.js <<'OCR_EOF'
+      // OCR resources were prefetched and placed by the nix build in
+      // postConfigure; no-op so electron-builder does not redo any of it.
+      module.exports = async function beforePack() {};
+      OCR_EOF
+    '';
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "siyuan";
@@ -232,44 +293,7 @@ stdenv.mkDerivation (finalAttrs: {
     cp -r ${electron.dist} electron-dist
     chmod -R u+w electron-dist
   ''
-  + lib.optionalString hasOCR ''
-    # ---- offline built-in OCR resources (since v3.8.7) ----
-    # Upstream's beforePack hook runs ../scripts/prepare-ocr.py, which expects a
-    # writable repo layout plus network access. Mirror that layout inside the
-    # build directory, place the resources, do the hook's work here and make the
-    # hook a no-op.
-    mkdir -p ocr-layout/scripts
-    cp -r ${finalAttrs.src}/scripts/. ocr-layout/scripts/
-    ln -s "$PWD" ocr-layout/app
-    # kernel has to be a real directory: the goModules FOD is a vendor tree
-    # (modules.txt at its root) and the worker shares the kernel's modules.
-    mkdir -p ocr-layout/kernel
-    cp -r ${finalAttrs.src}/kernel/. ocr-layout/kernel/
-    ln -s ${finalAttrs.kernel.goModules} ocr-layout/kernel/vendor
-
-    ${ocrModelCopies}
-    python3 ocr-layout/scripts/prepare-ocr.py
-
-    # ocr-worker: the same command and output path as upstream's
-    # prepare-ocr.py --build-worker, built offline in vendor mode.
-    mkdir -p stage/ocr/runtime/${ocrTarget}
-    ${lib.optionalString isLinux ''
-      workerOut="$PWD/stage/ocr/runtime/${ocrTarget}/siyuan-ocr"
-      (
-        cd ocr-layout/kernel
-        env CGO_ENABLED=1 GOFLAGS=-mod=vendor GOPROXY=off GOTOOLCHAIN=local \
-          GOCACHE="$PWD/../../.gocache" \
-          go build -trimpath -ldflags="-s -w" -o "$workerOut" ./ocr/cmd/ocr-worker
-      )
-    ''}
-
-    # Resources are in place, so the hook has nothing left to do.
-    cat > scripts/beforePack.js <<'OCR_EOF'
-    // OCR resources were prefetched and placed by the nix build in
-    // postConfigure; no-op so electron-builder does not redo any of it.
-    module.exports = async function beforePack() {};
-    OCR_EOF
-  '';
+  + ocrSetup { inherit (finalAttrs) src kernel; };
 
   postBuild = ''
     electronBuilderArgs=(
@@ -331,28 +355,100 @@ stdenv.mkDerivation (finalAttrs: {
     categories = [ "Utility" ];
   });
 
-  passthru = {
-    kernel = finalAttrs.kernel;
+  passthru =
+    let
+      serverUi = stdenv.mkDerivation {
+        pname = "siyuan-server-ui";
+        inherit (finalAttrs) version src pnpmDeps;
 
-    # Updates the version, the hashes and ocr-assets.json; see update.sh.
-    updateScript = ./update.sh;
+        sourceRoot = "${finalAttrs.src.name}/app";
+        env.ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
 
-    # Upstream kernel tests require model.Conf initialization, system fonts,
-    # pandoc, and other assumptions that do not hold in the Nix sandbox during
-    # the main build. Run them as a separate derivation so the package build
-    # stays reliable while test results remain available via
-    # nix-build -A siyuan.passthru.tests.kernel.
-    tests.kernel = finalAttrs.kernel.overrideAttrs {
-      pname = "${finalAttrs.pname}-kernel-test";
-      doCheck = true;
-      checkPhase = ''
-        runHook preCheck
-        go test -vet=off -tags=fts5,sqlcipher ./...
-        runHook postCheck
-      '';
-      installPhase = "touch $out";
+        nativeBuildInputs = [
+          nodejs
+          pnpmConfigHook
+          pnpm
+          pnpmBuildHook
+        ]
+        ++ lib.optionals hasOCR [
+          python3
+        ]
+        ++ lib.optionals (hasOCR && isLinux) [
+          go_1_26
+        ];
+
+        postConfigure = ocrSetup { inherit (finalAttrs) src kernel; };
+        postBuild = "node scripts/trimChangelogs.js";
+
+        installPhase = ''
+          runHook preInstall
+          mkdir -p $out/lib/siyuan
+          mv stage appearance guide $out/lib/siyuan/
+          if [ -d changelogs ]; then
+            mv changelogs $out/lib/siyuan/
+          fi
+          runHook postInstall
+        '';
+
+        meta = {
+          description = "SiYuan server web assets";
+          homepage = finalAttrs.meta.homepage;
+          license = finalAttrs.meta.license;
+          maintainers = finalAttrs.meta.maintainers;
+          platforms = serverPlatforms;
+        };
+      };
+
+      server = symlinkJoin {
+        pname = "siyuan-server";
+        inherit (finalAttrs) version;
+        paths = [ serverUi ];
+
+        postBuild = ''
+          mkdir -p $out/bin
+          ln -s ${finalAttrs.kernel}/bin/kernel $out/bin/siyuan-kernel
+          ln -s ${finalAttrs.src}/app/pandoc/pandoc-resources $out/lib/siyuan/pandoc-resources
+        '';
+
+        passthru = {
+          inherit (finalAttrs) kernel pnpmDeps;
+          ui = serverUi;
+          updateScript = ./update.sh;
+        };
+
+        meta = finalAttrs.meta // {
+          description = "SiYuan note server";
+          mainProgram = "siyuan-kernel";
+          platforms = serverPlatforms;
+        };
+      };
+    in
+    {
+      kernel = finalAttrs.kernel;
+      inherit server;
+      ui = serverUi;
+
+      # Updates the version, the hashes and ocr-assets.json; see update.sh.
+      updateScript = ./update.sh;
+
+      # Upstream kernel tests require model.Conf initialization, system fonts,
+      # pandoc, and other assumptions that do not hold in the Nix sandbox during
+      # the main build. Run them as a separate derivation so the package build
+      # stays reliable while test results remain available via
+      # nix-build -A siyuan.passthru.tests.kernel.
+      tests.kernel = finalAttrs.kernel.overrideAttrs {
+        pname = "${finalAttrs.pname}-kernel-test";
+        doCheck = true;
+        checkPhase = ''
+          runHook preCheck
+          go test -vet=off -tags=fts5,sqlcipher ./...
+          runHook postCheck
+        '';
+        installPhase = "touch $out";
+      };
+
+      tests.siyuan = nixosTests.siyuan;
     };
-  };
 
   meta = {
     description = "Privacy-first personal knowledge management system that supports complete offline usage, as well as end-to-end encrypted data sync";
