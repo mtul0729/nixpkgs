@@ -197,6 +197,15 @@
   "module-services-rnsd-quickstart": [
     "index.html#module-services-rnsd-quickstart"
   ],
+  "module-services-siyuan": [
+    "index.html#module-services-siyuan"
+  ],
+  "module-services-siyuan-quickstart": [
+    "index.html#module-services-siyuan-quickstart"
+  ],
+  "module-services-siyuan-reverse-proxy": [
+    "index.html#module-services-siyuan-reverse-proxy"
+  ],
   "module-services-tandoor-recipes-migrating-media-option-move": [
     "index.html#module-services-tandoor-recipes-migrating-media-option-move",
     "index.html#module-services-tandoor-recipes-migrating-media-option-1"
