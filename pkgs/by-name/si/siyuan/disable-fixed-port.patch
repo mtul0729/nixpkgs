@@ -1,0 +1,20 @@
+--- a/server/proxy/fixedport.go
++++ b/server/proxy/fixedport.go
+@@ -8,6 +8,7 @@ import (
+ 	"net/http"
+ 	"net/http/httputil"
+ 	"net/url"
++	"os"
+ 
+ 	"github.com/siyuan-note/logging"
+ 	"github.com/siyuan-note/siyuan/kernel/util"
+@@ -18,6 +19,9 @@ import (
+ )
+ 
+ func InitFixedPortService(host string, certPath, keyPath string) {
++	if os.Getenv("SIYUAN_DISABLE_FIXED_PORT") == "1" {
++		return
++	}
+ 	if util.FixedPort != util.ServerPort {
+ 		if util.IsPortOpen(util.FixedPort) {
+ 			return

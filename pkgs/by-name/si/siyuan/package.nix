@@ -4,7 +4,6 @@
   fetchFromGitHub,
   fetchurl,
   buildGoModule,
-  symlinkJoin,
   replaceVars,
   pandoc,
   nodejs,
@@ -209,6 +208,9 @@ stdenv.mkDerivation (finalAttrs: {
       (replaceVars ./set-pandoc-path.patch {
         pandoc_path = lib.getExe pandoc;
       })
+      # Drop once the kernel accepts --fixed-port=false (3.8.10, upstream
+      # siyuan-note/siyuan@b0230019) and the module passes it instead.
+      ./disable-fixed-port.patch
     ];
 
     # Set flags and tags as per upstream's Dockerfile
@@ -399,15 +401,19 @@ stdenv.mkDerivation (finalAttrs: {
         };
       };
 
-      server = symlinkJoin {
+      server = stdenv.mkDerivation {
         pname = "siyuan-server";
         inherit (finalAttrs) version;
-        paths = [ serverUi ];
+        dontUnpack = true;
 
-        postBuild = ''
-          mkdir -p $out/bin
+        installPhase = ''
+          runHook preInstall
+          mkdir -p $out/bin $out/lib/siyuan
+          cp -a ${serverUi}/lib/siyuan/. $out/lib/siyuan/
+          chmod -R u+w $out/lib/siyuan
           ln -s ${finalAttrs.kernel}/bin/kernel $out/bin/siyuan-kernel
           ln -s ${finalAttrs.src}/app/pandoc/pandoc-resources $out/lib/siyuan/pandoc-resources
+          runHook postInstall
         '';
 
         passthru = {
