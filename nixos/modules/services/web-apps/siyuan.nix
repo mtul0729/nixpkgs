@@ -169,7 +169,12 @@ in
       after = [ "network.target" ];
       wantedBy = [ "multi-user.target" ];
 
-      environment.HOME = workspaceDir;
+      environment = {
+        HOME = workspaceDir;
+        # A system service must not reserve the desktop client's 6806
+        # compatibility port. Set `port = 6806` if that endpoint is wanted.
+        SIYUAN_DISABLE_FIXED_PORT = "1";
+      };
 
       preStart = ''
         umask 0077
