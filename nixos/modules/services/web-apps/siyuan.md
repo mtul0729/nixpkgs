@@ -54,6 +54,57 @@ The kernel's data directory is managed by systemd as
 {file}`/var/lib/siyuan`. Configuration written by the web UI is kept in
 {file}`/var/lib/siyuan/conf/conf.json`.
 
+## LAN sync {#module-services-siyuan-lan-sync}
+
+LAN sync is separate from {option}`services.siyuan.networkServe`. It opens a
+TLS listener on an ephemeral port and uses mDNS to find peers on the local
+network. To make that listener and mDNS reachable when the NixOS firewall is
+enabled:
+
+```nix
+{
+  networking.nftables.enable = true;
+
+  services.siyuan = {
+    enable = true;
+    openLANSyncFirewall = true;
+  };
+}
+```
+
+The option requires the nftables firewall backend. It creates a dedicated
+`inet siyuan_lan_sync` table and adds the `siyuan.service` cgroup to its
+`services` set. Inbound TCP and UDP traffic is accepted only when the target
+socket belongs to that cgroup. This permits SiYuan's ephemeral listener
+without opening an ephemeral port range, and it deliberately does not expose
+{option}`services.siyuan.port`. UDP port 5353 and SiYuan's ephemeral UDP
+sockets are needed for mDNS queries and replies. Other processes, including
+Avahi, can share port 5353 through multicast socket reuse.
+
+nftables sets cannot be referenced across tables, and systemd's `NFTSet=`
+cannot address the NixOS firewall's hyphenated `nixos-fw` table name. The
+dedicated table therefore marks matching packets with bit `0x40000000`, and
+the NixOS `input-allow` chain accepts that mark. The option reserves this
+packet mark bit.
+
+LAN sync only accelerates an existing SiYuan sync configuration. Enable cloud
+sync and the LAN option in SiYuan's web UI, and configure the same repository
+key and sync target on every device. The cloud service remains authoritative;
+LAN peers are used to fetch object chunks when available. The repository key
+also scopes mDNS discovery, so unrelated SiYuan instances do not appear as
+peers.
+
+To audit the firewall rule and the dynamic cgroup membership:
+
+```ShellSession
+# nft list table inet siyuan_lan_sync
+# nft list table inet nixos-fw | grep 'SiYuan LAN sync'
+# curl -u siyuan:ACCESS_CODE -X POST http://127.0.0.1:6806/api/sync/getSyncLANStatus
+```
+
+The API should report `"enabled": true`, `"active": true`, and eventually
+`"connectedPeers": 1` when another authenticated device is present.
+
 The system service disables the kernel's optional compatibility listener on
 `6806`, so a desktop client on the same machine can keep using its fixed port.
 Set {option}`services.siyuan.port` to `6806` if the server itself should own
