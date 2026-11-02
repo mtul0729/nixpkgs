@@ -344,6 +344,9 @@ in
           "AF_UNIX"
           "AF_INET"
           "AF_INET6"
+          # Go's net.Interfaces() enumerates interfaces over netlink. Without
+          # AF_NETLINK the kernel sees no private address and disables LAN sync.
+          "AF_NETLINK"
         ];
         RestrictNamespaces = true;
         RestrictRealtime = true;
