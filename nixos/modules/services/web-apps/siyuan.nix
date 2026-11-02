@@ -48,10 +48,17 @@ let
   networkProxyJSON =
     if cfg.networkProxy == null then
       null
+    else if cfg.networkProxy == "system" then
+      {
+        scheme = "system";
+        host = "";
+        port = "";
+      }
     else
       {
-        inherit (cfg.networkProxy) scheme host;
-        port = if cfg.networkProxy.port == null then "" else toString cfg.networkProxy.port;
+        scheme = "";
+        host = "";
+        port = "";
       };
 in
 {
@@ -95,57 +102,31 @@ in
 
     networkProxy = lib.mkOption {
       type = lib.types.nullOr (
-        lib.types.submodule {
-          options = {
-            scheme = lib.mkOption {
-              type = lib.types.enum [
-                ""
-                "system"
-                "http"
-                "https"
-                "socks5"
-              ];
-              description = ''
-                Proxy scheme. An empty string connects directly, while
-                `system` asks the kernel to use the system proxy configuration.
-              '';
-            };
-
-            host = lib.mkOption {
-              type = lib.types.str;
-              default = "";
-              description = ''
-                Proxy host for the `http`, `https`, and `socks5` schemes. It may
-                include credentials in the form `user:password@host`.
-              '';
-            };
-
-            port = lib.mkOption {
-              type = lib.types.nullOr lib.types.port;
-              default = null;
-              description = ''
-                Proxy port for the `http`, `https`, and `socks5` schemes.
-              '';
-            };
-          };
-        }
+        lib.types.enum [
+          "system"
+          "direct"
+        ]
       );
       default = null;
-      example = {
-        scheme = "http";
-        host = "127.0.0.1";
-        port = 7890;
-      };
+      example = "system";
       description = ''
-        Network proxy used by the kernel for outbound requests. When unset, the
-        value stored in {file}`conf.json` is left under the control of the web
-        UI. When set, this module writes it before every service start. Changes
-        made through the web UI still take effect immediately, but they are
-        overwritten on the next restart.
+        Network proxy mode used by the kernel for outbound requests.
 
-        Setting `HTTP_PROXY` or `HTTPS_PROXY` in the unit environment is not
-        sufficient because the kernel resets those variables from this
-        configuration during startup.
+        `null` leaves the value in {file}`conf.json` under the web UI's control.
+        `"system"` tells the kernel to retain the environment it inherited from
+        systemd, including `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`.
+        `"direct"` disables proxying.
+
+        This option only controls the proxy mode. Supply proxy URLs through
+        {option}`services.siyuan.environmentFile`, not in this Nix expression:
+        the kernel clears proxy environment variables unless the mode is
+        `"system"`, and credentials in the Nix store are readable by every local
+        user.
+
+        When this option is set, the module writes the corresponding value to
+        {file}`conf.json` before service start, but only if it differs from the
+        current value. Changes made through the web UI remain active until the
+        next service restart.
       '';
     };
 
@@ -161,12 +142,27 @@ in
     };
 
     environmentFile = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
+      type = lib.types.nullOr lib.types.externalPath;
       default = null;
-      example = "/run/secrets/siyuan.env";
+      example = "/run/secrets/siyuan-proxy.env";
       description = ''
-        Optional environment file read by systemd. It can provide
-        `SIYUAN_ACCESS_AUTH_CODE` and other runtime environment variables.
+        Optional environment file read by systemd at service start. The file
+        must be readable by {option}`services.siyuan.user` and should be
+        readable only by that user, for example mode `0600`.
+
+        It can provide `SIYUAN_ACCESS_AUTH_CODE` and other runtime environment
+        variables. With {option}`services.siyuan.networkProxy` set to
+        `"system"`, it must provide the desired proxy variables, for example:
+
+        ```text
+        HTTP_PROXY=http://127.0.0.1:7890
+        HTTPS_PROXY=http://127.0.0.1:7890
+        NO_PROXY=localhost,127.0.0.1,::1
+        ```
+
+        Keep this file outside the Nix store, such as a `sops-nix` template
+        under {file}`/run/secrets`. Pass its runtime path as a string so Nix
+        does not copy it into the store.
       '';
     };
 
@@ -223,27 +219,20 @@ in
 
     assertions = [
       {
-        assertion =
-          cfg.networkProxy == null
-          || builtins.elem cfg.networkProxy.scheme [
-            ""
-            "system"
-          ]
-          || (cfg.networkProxy.host != "" && cfg.networkProxy.port != null && cfg.networkProxy.port > 0);
+        assertion = cfg.networkProxy != "system" || cfg.environmentFile != null;
         message = ''
-          services.siyuan.networkProxy requires both host and a non-zero port
-          when scheme is http, https, or socks5.
+          services.siyuan.networkProxy = "system" requires
+          services.siyuan.environmentFile to provide HTTP_PROXY or HTTPS_PROXY.
         '';
       }
     ];
 
-    warnings =
-      lib.optional (cfg.networkServe && cfg.accessAuthCode == "" && cfg.environmentFile == null)
-        ''
-          services.siyuan is listening on all interfaces without an access code or
-          environment file. Set services.siyuan.accessAuthCode or provide
-          SIYUAN_ACCESS_AUTH_CODE through services.siyuan.environmentFile.
-        '';
+    warnings = lib.optional (cfg.networkServe && cfg.accessAuthCode == "") ''
+      services.siyuan is listening on all interfaces without
+      services.siyuan.accessAuthCode. If the access code is supplied by
+      services.siyuan.environmentFile, make sure it contains
+      SIYUAN_ACCESS_AUTH_CODE.
+    '';
 
     systemd.services.siyuan = {
       description = "SiYuan note server";
@@ -263,6 +252,15 @@ in
         mkdir -p "$(dirname "$conf")"
         if [[ ! -s "$conf" ]]; then
           printf '{}\n' > "$conf"
+        fi
+
+        if ${lib.getExe pkgs.jq} -e \
+          --argjson networkServe ${lib.boolToString cfg.networkServe} \
+          --argjson networkProxy ${lib.escapeShellArg (builtins.toJSON networkProxyJSON)} \
+          '(.system.networkServe == $networkServe) and
+           ($networkProxy == null or .system.networkProxy == $networkProxy)' \
+          "$conf" >/dev/null; then
+          exit 0
         fi
 
         tmp="$(mktemp "$conf.XXXXXX")"
