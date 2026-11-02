@@ -44,6 +44,15 @@ let
   ++ cfg.extraArgs;
 
   privilegedPort = cfg.port < 1024;
+
+  networkProxyJSON =
+    if cfg.networkProxy == null then
+      null
+    else
+      {
+        inherit (cfg.networkProxy) scheme host;
+        port = if cfg.networkProxy.port == null then "" else toString cfg.networkProxy.port;
+      };
 in
 {
   meta = {
@@ -81,6 +90,62 @@ in
         Whether the kernel should listen on all interfaces instead of only
         `127.0.0.1`. Enable this when exposing SiYuan directly or through a
         reverse proxy on another host.
+      '';
+    };
+
+    networkProxy = lib.mkOption {
+      type = lib.types.nullOr (
+        lib.types.submodule {
+          options = {
+            scheme = lib.mkOption {
+              type = lib.types.enum [
+                ""
+                "system"
+                "http"
+                "https"
+                "socks5"
+              ];
+              description = ''
+                Proxy scheme. An empty string connects directly, while
+                `system` asks the kernel to use the system proxy configuration.
+              '';
+            };
+
+            host = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = ''
+                Proxy host for the `http`, `https`, and `socks5` schemes. It may
+                include credentials in the form `user:password@host`.
+              '';
+            };
+
+            port = lib.mkOption {
+              type = lib.types.nullOr lib.types.port;
+              default = null;
+              description = ''
+                Proxy port for the `http`, `https`, and `socks5` schemes.
+              '';
+            };
+          };
+        }
+      );
+      default = null;
+      example = {
+        scheme = "http";
+        host = "127.0.0.1";
+        port = 7890;
+      };
+      description = ''
+        Network proxy used by the kernel for outbound requests. When unset, the
+        value stored in {file}`conf.json` is left under the control of the web
+        UI. When set, this module writes it before every service start. Changes
+        made through the web UI still take effect immediately, but they are
+        overwritten on the next restart.
+
+        Setting `HTTP_PROXY` or `HTTPS_PROXY` in the unit environment is not
+        sufficient because the kernel resets those variables from this
+        configuration during startup.
       '';
     };
 
@@ -156,6 +221,22 @@ in
 
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
 
+    assertions = [
+      {
+        assertion =
+          cfg.networkProxy == null
+          || builtins.elem cfg.networkProxy.scheme [
+            ""
+            "system"
+          ]
+          || (cfg.networkProxy.host != "" && cfg.networkProxy.port != null && cfg.networkProxy.port > 0);
+        message = ''
+          services.siyuan.networkProxy requires both host and a non-zero port
+          when scheme is http, https, or socks5.
+        '';
+      }
+    ];
+
     warnings =
       lib.optional (cfg.networkServe && cfg.accessAuthCode == "" && cfg.environmentFile == null)
         ''
@@ -180,16 +261,20 @@ in
         umask 0077
         conf="${workspaceDir}/conf/conf.json"
         mkdir -p "$(dirname "$conf")"
-        if [[ -s "$conf" ]]; then
-          tmp="$(mktemp "$conf.XXXXXX")"
-          trap 'rm -f "$tmp"' EXIT
-          ${lib.getExe pkgs.jq} --argjson networkServe ${lib.boolToString cfg.networkServe} \
-            '.system.networkServe = $networkServe' "$conf" > "$tmp"
-          mv "$tmp" "$conf"
-          trap - EXIT
-        else
-          printf '{"system":{"networkServe":%s}}\n' ${lib.boolToString cfg.networkServe} > "$conf"
+        if [[ ! -s "$conf" ]]; then
+          printf '{}\n' > "$conf"
         fi
+
+        tmp="$(mktemp "$conf.XXXXXX")"
+        trap 'rm -f "$tmp"' EXIT
+        ${lib.getExe pkgs.jq} \
+          --argjson networkServe ${lib.boolToString cfg.networkServe} \
+          --argjson networkProxy ${lib.escapeShellArg (builtins.toJSON networkProxyJSON)} \
+          '.system.networkServe = $networkServe |
+           if $networkProxy == null then . else .system.networkProxy = $networkProxy end' \
+          "$conf" > "$tmp"
+        mv "$tmp" "$conf"
+        trap - EXIT
       '';
 
       # Restart = "always" restarts a kernel that exits cleanly, so a broken
