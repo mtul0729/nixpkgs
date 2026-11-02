@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 
 {
   name = "siyuan";
@@ -22,6 +22,30 @@
       networkProxy = "system";
       environmentFile = "/etc/siyuan-proxy.env";
     };
+
+    # Seed a complete sync identity so the kernel starts LAN sync during boot.
+    # The key only needs to be present for this test; no cloud request is made.
+    systemd.services.siyuan.preStart = lib.mkBefore ''
+      install -d -m 0700 /var/lib/siyuan/conf
+      key="$(${pkgs.coreutils}/bin/printf %s test-repo-key | ${pkgs.coreutils}/bin/base64 -w0)"
+      cat > /var/lib/siyuan/conf/conf.json <<EOF
+      {
+        "repo": {
+          "key": "$key"
+        },
+        "sync": {
+          "enabled": true,
+          "mode": 1,
+          "provider": 2,
+          "cloudName": "main",
+          "lan": {
+            "enabled": true,
+            "maxConcurrentReqs": 16
+          }
+        }
+      }
+      EOF
+    '';
   };
 
   testScript = ''
@@ -31,6 +55,12 @@
     machine.wait_for_open_port(6807)
     machine.succeed("curl --fail --max-time 10 --user siyuan:test-access-code http://127.0.0.1:6807/ >/dev/null")
     machine.succeed("curl --fail --max-time 10 --user siyuan:test-access-code http://127.0.0.1:6807/appearance/langs/zh-CN.json >/dev/null")
+
+    # net.Interfaces() uses netlink; without AF_NETLINK the kernel reports no
+    # private address and LAN sync remains inactive.
+    machine.succeed("systemctl show -P RestrictAddressFamilies siyuan.service | grep -qw AF_NETLINK")
+    machine.wait_until_succeeds("journalctl -u siyuan.service --no-pager | grep -F 'LAN sync service started'")
+    machine.succeed("curl --fail --max-time 10 --user siyuan:test-access-code -X POST http://127.0.0.1:6807/api/sync/getSyncLANStatus | ${pkgs.jq}/bin/jq -e '.code == 0 and .data.enabled == true and .data.active == true'")
 
     # "system" preserves the proxy environment imported by systemd.
     machine.succeed("${pkgs.jq}/bin/jq -e '.system.networkProxy == {\"scheme\":\"system\",\"host\":\"\",\"port\":\"\"}' /var/lib/siyuan/conf/conf.json")
