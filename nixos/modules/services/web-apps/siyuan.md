@@ -77,30 +77,51 @@ only once the UI is servable.
 
 By default the module leaves the network proxy setting in
 {file}`conf.json` under the web UI's control. To make NixOS configuration
-authoritative at startup, set {option}`services.siyuan.networkProxy`:
+authoritative at startup, select a proxy mode and provide the proxy URLs
+through a runtime environment file:
 
 ```nix
 {
-  services.siyuan.networkProxy = {
-    scheme = "http";
-    host = "127.0.0.1";
-    port = 7890;
+  services.siyuan = {
+    networkProxy = "system";
+    environmentFile = "/run/secrets/siyuan-proxy.env";
   };
 }
 ```
 
-The `http`, `https`, and `socks5` schemes use `host` and `port`. An empty
-`scheme` connects directly, while `system` asks the kernel to use the system
-proxy configuration. When this option is set, the module writes it to
-{file}`conf.json` before every service start. The web UI can still change the
-setting at runtime, but that change lasts only until the next restart.
+The environment file should be readable only by the service user, for example
+mode `0600`, and can contain:
 
-Do not configure `HTTP_PROXY` or `HTTPS_PROXY` through
-{option}`services.siyuan.environmentFile` instead: the kernel reads
-{file}`conf.json` during startup and replaces those environment variables.
-Restart `siyuan.service` after changing
-{option}`services.siyuan.networkProxy`. Credentials embedded in `host` are
-stored in the Nix store.
+```text
+HTTP_PROXY=http://127.0.0.1:7890
+HTTPS_PROXY=http://127.0.0.1:7890
+NO_PROXY=localhost,127.0.0.1,::1
+```
+
+`networkProxy = "system"` tells the kernel to retain these variables. Setting
+only `HTTP_PROXY` or `HTTPS_PROXY` is not sufficient: the kernel otherwise
+clears them from its environment during startup. Use `"direct"` to disable
+proxying. Leaving the option at `null`, the default, keeps the web UI in
+control.
+
+The module compares the desired proxy mode with {file}`conf.json` and replaces
+the file atomically only when the value differs. Other settings and web UI
+changes are preserved, but a proxy change made in the web UI lasts only until
+the next service restart.
+
+Keep the environment file outside the Nix store, such as a `sops-nix` template
+under {file}`/run/secrets`, and pass its runtime path as a string. This keeps
+proxy credentials out of {file}`conf.json`, the Nix store, and the generated
+unit. Restart `siyuan.service` after changing either the proxy mode or the
+environment file.
+
+To audit the effective mode and environment-file path:
+
+```ShellSession
+# jq '.system.networkProxy' /var/lib/siyuan/conf/conf.json
+# systemctl show siyuan.service -p EnvironmentFiles
+# journalctl -u siyuan.service | grep 'network proxy'
+```
 
 ## Reverse proxy {#module-services-siyuan-reverse-proxy}
 
