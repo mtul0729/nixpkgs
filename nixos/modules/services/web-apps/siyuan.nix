@@ -11,6 +11,14 @@ let
 
   workspaceDir = "/var/lib/siyuan";
   workingDir = "${cfg.package}/lib/siyuan";
+  fixedPortFlagSupported =
+    cfg.package.passthru.fixedPortFlagSupported or (
+      lib.versionAtLeast cfg.package.version "3.8.10"
+      || (
+        lib.versionOlder cfg.package.version "3.8.10"
+        && lib.versionAtLeast cfg.package.version "3.8.10-alpha.3"
+      )
+    );
 
   args = [
     (lib.getExe' cfg.package "siyuan-kernel")
@@ -25,6 +33,9 @@ let
     (toString cfg.port)
     "--mode"
     "prod"
+  ]
+  ++ lib.optionals fixedPortFlagSupported [
+    "--fixed-port=false"
   ]
   ++ lib.optionals (cfg.accessAuthCode != "") [
     "--accessAuthCode"
@@ -241,8 +252,11 @@ in
 
       environment = {
         HOME = workspaceDir;
+      }
+      // lib.optionalAttrs (!fixedPortFlagSupported) {
         # A system service must not reserve the desktop client's 6806
-        # compatibility port. Set `port = 6806` if that endpoint is wanted.
+        # compatibility port. Older kernels need the environment variable
+        # understood by the package's patch.
         SIYUAN_DISABLE_FIXED_PORT = "1";
       };
 
