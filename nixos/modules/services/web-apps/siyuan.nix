@@ -11,6 +11,10 @@ let
 
   workspaceDir = "/var/lib/siyuan";
   workingDir = "${cfg.package}/lib/siyuan";
+  lanSyncFirewallEnabled = cfg.openLANSyncFirewall && config.networking.firewall.enable;
+  lanSyncTable = "siyuan_lan_sync";
+  lanSyncSet = "services";
+  lanSyncMark = "0x40000000";
   fixedPortFlagSupported =
     cfg.package.passthru.fixedPortFlagSupported or (
       lib.versionAtLeast cfg.package.version "3.8.10"
@@ -206,6 +210,24 @@ in
       description = "Whether to open {option}`services.siyuan.port` in the firewall.";
     };
 
+    openLANSyncFirewall = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether to allow LAN sync peers to reach the kernel's dynamic TCP and
+        UDP sockets, including mDNS discovery on UDP port 5353.
+
+        SiYuan starts its LAN sync listener on an ephemeral port. This option
+        puts the service's cgroup in an nftables set and matches sockets
+        belonging to that set. It does not open an ephemeral port range and
+        excludes the configured web port. It therefore requires the nftables
+        firewall backend.
+
+        This option reserves nftables packet mark bit `0x40000000` for the
+        handoff from the dedicated LAN sync table to the NixOS firewall.
+      '';
+    };
+
     extraArgs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -236,6 +258,17 @@ in
           services.siyuan.environmentFile to provide HTTP_PROXY or HTTPS_PROXY.
         '';
       }
+      {
+        assertion =
+          !cfg.openLANSyncFirewall
+          || !config.networking.firewall.enable
+          || config.networking.firewall.backend == "nftables";
+        message = ''
+          services.siyuan.openLANSyncFirewall requires the nftables firewall
+          backend because LAN sync uses ephemeral ports and is matched by
+          socket cgroup ownership.
+        '';
+      }
     ];
 
     warnings = lib.optional (cfg.networkServe && cfg.accessAuthCode == "") ''
@@ -245,9 +278,43 @@ in
       SIYUAN_ACCESS_AUTH_CODE.
     '';
 
+    networking.firewall.extraInputRules = lib.mkIf lanSyncFirewallEnabled ''
+      meta mark & ${lanSyncMark} == ${lanSyncMark} \
+        accept comment "SiYuan LAN sync"
+    '';
+
+    networking.nftables.tables."${lanSyncTable}" = lib.mkIf lanSyncFirewallEnabled {
+      family = "inet";
+      content = ''
+        set ${lanSyncSet} {
+          type cgroupsv2
+        }
+
+        chain input {
+          type filter hook input priority filter - 10; policy accept;
+
+          # nftables sets cannot be referenced across tables, and systemd's
+          # NFTSet= rejects the hyphen in the nixos-fw table name. Mark the
+          # packets here, then let the NixOS input-allow chain accept them.
+          iifname != "lo" udp dport >= 1024 \
+            socket cgroupv2 level 2 @${lanSyncSet} \
+            meta mark set meta mark | ${lanSyncMark}
+          iifname != "lo" tcp dport >= 1024 tcp dport != ${toString cfg.port} \
+            socket cgroupv2 level 2 @${lanSyncSet} \
+            meta mark set meta mark | ${lanSyncMark}
+        }
+      '';
+    };
+
+    # LKL does not support socket cgroupv2 matches, so omit them from the
+    # build-time ruleset check. The VM test exercises the real rules.
+    networking.nftables.preCheckRuleset = lib.mkIf lanSyncFirewallEnabled ''
+      sed -i 's/socket cgroupv2 level 2 @${lanSyncSet}//g' ruleset.conf
+    '';
+
     systemd.services.siyuan = {
       description = "SiYuan note server";
-      after = [ "network.target" ];
+      after = [ "network.target" ] ++ lib.optional lanSyncFirewallEnabled "nftables.service";
       wantedBy = [ "multi-user.target" ];
 
       environment = {
@@ -320,6 +387,7 @@ in
         StateDirectory = "siyuan";
         StateDirectoryMode = "0700";
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
+        NFTSet = lib.mkIf lanSyncFirewallEnabled "cgroup:inet:${lanSyncTable}:${lanSyncSet}";
         # The kernel exits with status 0 when the settings are imported or
         # /api/system/exit is called, expecting its desktop client to start it
         # again; nothing does that here, so restart on clean exits too.
