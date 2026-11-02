@@ -73,6 +73,35 @@ server is already listening, so the first requests can still 404. An
 `ExecStartPost` waits for those assets, which means `systemctl start` returns
 only once the UI is servable.
 
+## Network proxy {#module-services-siyuan-network-proxy}
+
+By default the module leaves the network proxy setting in
+{file}`conf.json` under the web UI's control. To make NixOS configuration
+authoritative at startup, set {option}`services.siyuan.networkProxy`:
+
+```nix
+{
+  services.siyuan.networkProxy = {
+    scheme = "http";
+    host = "127.0.0.1";
+    port = 7890;
+  };
+}
+```
+
+The `http`, `https`, and `socks5` schemes use `host` and `port`. An empty
+`scheme` connects directly, while `system` asks the kernel to use the system
+proxy configuration. When this option is set, the module writes it to
+{file}`conf.json` before every service start. The web UI can still change the
+setting at runtime, but that change lasts only until the next restart.
+
+Do not configure `HTTP_PROXY` or `HTTPS_PROXY` through
+{option}`services.siyuan.environmentFile` instead: the kernel reads
+{file}`conf.json` during startup and replaces those environment variables.
+Restart `siyuan.service` after changing
+{option}`services.siyuan.networkProxy`. Credentials embedded in `host` are
+stored in the Nix store.
+
 ## Reverse proxy {#module-services-siyuan-reverse-proxy}
 
 When placing SiYuan behind a TLS-terminating reverse proxy, keep
