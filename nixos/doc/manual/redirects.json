@@ -200,6 +200,9 @@
   "module-services-siyuan": [
     "index.html#module-services-siyuan"
   ],
+  "module-services-siyuan-lan-sync": [
+    "index.html#module-services-siyuan-lan-sync"
+  ],
   "module-services-siyuan-network-proxy": [
     "index.html#module-services-siyuan-network-proxy"
   ],
