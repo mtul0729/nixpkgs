@@ -256,11 +256,15 @@ jobs:
 
       # master 只是 CI 文件的容器，但让它保持「upstream + CI 提交」这个形状：
       # 否则它会悄悄落后几千个提交。这里已经有完整的 upstream 历史，顺手做掉。
+      # 构建失败也要跑：master 不依赖 drift check 的结果，不跑的话它会等下一次
+      # integrate 成功才追上 upstream。
       - name: Rebase the CI commit onto upstream
+        if: always()
         env:
           TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          [ -d nixpkgs/.git ] || { echo "no nixpkgs checkout to rebase"; exit 0; }
           cd nixpkgs
           git fetch --no-tags "https://github.com/$FORK" \
             "+refs/heads/master:refs/remotes/fork/master"
