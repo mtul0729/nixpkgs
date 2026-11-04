@@ -47,21 +47,21 @@ jobs:
               echo "::error::branches.txt 里有一行没有分支名"
               exit 1
             fi
-            # 显式包列表是手写的，workflow 按逗号切分。空格是这里最常见的写法
-            # 错误，拼错的名字则要到 integrate 构建时才炸——两样都能在这里拦下。
+            # 显式包列表是手写的：update 只按逗号切分，integrate 把逗号换成空格
+            # 再切。逗号周围的空格两边都容忍，包名内部的空格 update 会当成一个
+            # 属性名。这里拦下这种形状错误；名字是否存在由 update 求值时报。
             case "$line" in
               *:*)
-                list="${line#*:}"
+                list="$(printf '%s' "${line#*:}" \
+                  | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
                 if [ -n "$list" ]; then
-                  if printf '%s' "$list" | grep -q '[[:space:]]'; then
-                    echo "::error::$name 的包列表里有空格；多个包要用逗号隔开"
-                    exit 1
-                  fi
                   IFS=',' read -ra attrs <<< "$list"
                   for attr in "${attrs[@]}"; do
+                    attr="$(printf '%s' "$attr" \
+                      | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
                     case "$attr" in
                       ''|*[!A-Za-z0-9_+-]*)
-                        echo "::error::$name 的包名 '$attr' 不是合法的属性名"
+                        echo "::error::$name 的包名 '$attr' 不是合法的属性名；多个包用逗号隔开"
                         exit 1 ;;
                     esac
                   done
