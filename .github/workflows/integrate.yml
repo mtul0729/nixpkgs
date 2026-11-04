@@ -45,6 +45,19 @@ jobs:
           sparse-checkout: nixpkgs-ci
           sparse-checkout-cone-mode: false
 
+      # 这条 job 真的编译，而 runner 只有 ~14 GB。11:34 那次就是 staging
+      # magpie 的 go-modules 时写满 /nix/store。清掉镜像里用不到的 SDK 能腾出
+      # 二十来 GB，只花 ~50 秒；update 的腿不跑这一步，因为它们通常只做升级。
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
       # nixpkgs 的历史里绝大多数是 blob，而合成只需要最终树和分支改动涉及的
       # blob；blob:none 让这一步从十几分钟降到一两分钟，检出时再按需拉当前树。
       # 和 update 共用同一条缓存：这里没有 matrix，strategy.job-index 会解析成 0，
@@ -220,10 +233,26 @@ jobs:
             exit 0
           fi
           git checkout -q "$INTEGRATION"
-          args=()
-          for a in "${attrs[@]}"; do args+=(-A "$a"); done
           echo "building: ${attrs[*]}"
-          cachix watch-exec mtul -- nix-build "${args[@]}" --no-out-link
+          df -h /
+
+          # 逐个属性构建。一次 nix-build 里某个包失败后，排在它后面的属性可能
+          # 根本没被调度，而且日志里只剩下一串 drv 路径。分开跑既能继续构建其余
+          # 属性，也能在最后一眼看出是哪几个包坏了。
+          failed=()
+          for a in "${attrs[@]}"; do
+            echo "::group::build $a"
+            if ! cachix watch-exec mtul -- nix-build -A "$a" --no-out-link; then
+              failed+=("$a")
+            fi
+            echo "::endgroup::"
+          done
+
+          df -h /
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "::error::以下属性没有构建成功：${failed[*]}"
+            exit 1
+          fi
 
       # master 只是 CI 文件的容器，但让它保持「upstream + CI 提交」这个形状：
       # 否则它会悄悄落后几千个提交。这里已经有完整的 upstream 历史，顺手做掉。
