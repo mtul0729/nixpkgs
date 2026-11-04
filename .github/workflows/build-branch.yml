@@ -51,6 +51,19 @@ jobs:
           sparse-checkout: nixpkgs-ci
           sparse-checkout-cone-mode: false
 
+      # 这个 workflow 的作用就是编译一个分支，依赖可能就是装不下的那种
+      # （Tauri、Rust、Go 的 vendor staging）。review 时代这里有这一步，改名成
+      # build-branch 时漏掉了，补回来。
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          swap-storage: false
+
       # 只读 update/integrate 写的那份缓存。这个 workflow 测的是临时分支，如果
       # 每个分支都存一份 1.7GB 的 .git，同样的 10GB 上限会被一堆一次性的 key
       # 慢慢吃光；而且它自己的 fetch 会顺带把分支 ref 写进 .git，没必要回存。
