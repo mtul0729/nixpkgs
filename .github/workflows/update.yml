@@ -214,7 +214,7 @@ jobs:
             # 一个 <branch>: <pkg> 只留一个 issue：换版本再失败就在旧 issue 上评论，
             # 否则每发一个新 alpha 就是一个新 issue。key 末尾的空格让它不会把
             # siyuan 和 siyuan-preview 配成同一个。
-            num=$(gh issue list -R "$FORK" --label update-failed --state open --limit 100 \
+            num=$(gh issue list -R "$FORK" --label update-failed --state open --limit 1000 \
               --json number,title \
               --jq '[.[] | select((.title == env.TITLE) or (.title | startswith(env.KEY))) | .number][0] // empty' || true)
             if [ -z "$num" ]; then
@@ -236,7 +236,7 @@ jobs:
           close_issues() {
             local pkg="$1" comment="$2" n
             export PKG_PREFIX="$BRANCH: $pkg " BASELINE_PREFIX="$BRANCH: baseline "
-            for n in $(gh issue list -R "$FORK" --label update-failed --state open --limit 100 \
+            for n in $(gh issue list -R "$FORK" --label update-failed --state open --limit 1000 \
               --json number,title \
               --jq '[.[] | select((.title | startswith(env.PKG_PREFIX)) or (.title | startswith(env.BASELINE_PREFIX))) | .number][]' || true); do
               gh issue close "$n" -R "$FORK" --comment "$comment" >/dev/null \
@@ -263,7 +263,8 @@ jobs:
           fi
 
           # 两条判据，和 pkgs/README.md 里加包的流程一致：IFD 关掉能出 drv，
-          # 然后真的构建（测试一起跑）。构建产物直接进 mtul。
+          # 然后真的构建。测试跑不跑由包自己的 doCheck 决定：pkg/ 分支按政策
+          # 设 false，准备给 upstream 的 PR 分支才需要完整测试。产物直接进 mtul。
           verify() {
             local a args=()
             for a in "$@"; do
