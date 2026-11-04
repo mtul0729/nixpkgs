@@ -11,6 +11,9 @@
 # by-name 看不见的（例如 all-packages.nix 里同源的另一个属性）。
 pkg/dashbeam
 pkg/magpie: magpie-cli
+# 只新增 helix-master；不要改 pkgs.helix / helix-unwrapped。nixpkgs 的 steelix
+# 复用 helix.defaultGrammarsOverlay 和 helix-unwrapped，改这两个属性会让 steelix
+# 的缓存失效。
 pkg/helix
 pkg/cosmic-desktop-mcp
 pkg/activitywatch: aw-server-rust,aw-client-rust
