@@ -18,3 +18,4 @@ pkg/fcitx5-vinput
 pkg/siyuan: siyuan,siyuan-preview,siyuan-server
 pkg/disktree
 pkg/strata
+pkg/helix-fcitx-focus
