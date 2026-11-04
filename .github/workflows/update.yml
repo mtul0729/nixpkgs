@@ -110,11 +110,17 @@ jobs:
           sparse-checkout: nixpkgs-ci
           sparse-checkout-cone-mode: false
 
+      # 所有 leg 共用一份 upstream 历史。GitHub 的缓存上限是 10GB/仓库，十条腿各
+      # 存一份 1.7GB 的 .git 会在同一轮里互相淘汰（key 0 和 6 就是这样消失的），
+      # 下一小时又得整份重下。分支自己的 ref 只有几十 KB，直接 fetch，不进缓存。
+      # 同一个 key 只有一个 leg 能保存成功，其余腿本来就会拿到 exact hit 后跳过。
       - name: Restore the nixpkgs git cache
         uses: actions/cache@v6
         with:
           path: nixpkgs/.git
-          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-${{ strategy.job-index }}
+          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}
+          # 过渡用：旧的 per-leg key（...-0 … ...-9）仍然可以捞出上游历史，
+          # 新 key 写进去之后这些条目会随 LRU 自然淘汰。
           restore-keys: |
             nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
 
