@@ -22,7 +22,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      # 这个 job 只读 .github/ 和 nixpkgs-ci/；整棵 nixpkgs 的 55,400 个文件
+      # 会让 checkout 花掉 ~20 秒。设置 sparse-checkout 之后 action 会改用
+      # --filter=blob:none，下载量也跟着降下来。
       - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github
+            nixpkgs-ci
+          sparse-checkout-cone-mode: false
 
       - name: Validate workflow YAML
         run: |
