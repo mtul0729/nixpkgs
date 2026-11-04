@@ -284,11 +284,27 @@ jobs:
 
           names=$(printf '%s\n' "${NEW[@]}" | jq -R . | jq -sc .)
           # A package opts into automatic updates by declaring an updateScript.
-          updatable=$(nix-instantiate --eval --json --strict --expr "
-            let pkgs = import ./. { };
-            in builtins.filter
-                 (n: (builtins.tryEval (pkgs.\${n} ? updateScript)).value or false)
-                 (builtins.fromJSON ''$names'')")
+          # The same evaluation reports names that do not exist at all: tryEval
+          # would otherwise drop a typo from branches.txt silently, and the first
+          # complaint would be integrate's "attribute not found" an hour later.
+          eval_json=$(nix-instantiate --eval --json --strict --expr "
+            let
+              pkgs = import ./. { };
+              names = builtins.fromJSON ''$names'';
+            in {
+              missing = builtins.filter (n: !(builtins.hasAttr n pkgs)) names;
+              updatable = builtins.filter
+                (n: (builtins.tryEval
+                       (builtins.hasAttr n pkgs && (pkgs.\${n} ? updateScript))
+                    ).value or false)
+                names;
+            }")
+          missing=$(jq -c .missing <<< "$eval_json")
+          if [ "$missing" != "[]" ]; then
+            echo "::error::$BRANCH: branches.txt 声明的属性不存在：$missing"
+            exit 1
+          fi
+          updatable=$(jq -c .updatable <<< "$eval_json")
           echo "updatable: $updatable"
 
           lease_tip=$old_tip
