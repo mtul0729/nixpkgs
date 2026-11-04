@@ -47,6 +47,27 @@ jobs:
               echo "::error::branches.txt 里有一行没有分支名"
               exit 1
             fi
+            # 显式包列表是手写的，workflow 按逗号切分。空格是这里最常见的写法
+            # 错误，拼错的名字则要到 integrate 构建时才炸——两样都能在这里拦下。
+            case "$line" in
+              *:*)
+                list="${line#*:}"
+                if [ -n "$list" ]; then
+                  if printf '%s' "$list" | grep -q '[[:space:]]'; then
+                    echo "::error::$name 的包列表里有空格；多个包要用逗号隔开"
+                    exit 1
+                  fi
+                  IFS=',' read -ra attrs <<< "$list"
+                  for attr in "${attrs[@]}"; do
+                    case "$attr" in
+                      ''|*[!A-Za-z0-9_+-]*)
+                        echo "::error::$name 的包名 '$attr' 不是合法的属性名"
+                        exit 1 ;;
+                    esac
+                  done
+                fi
+                ;;
+            esac
             if ! git ls-remote --exit-code "https://github.com/$FORK" \
               "refs/heads/$name" >/dev/null; then
               echo "::error::$name 在 fork 上不存在；integrate 会取不到它"
