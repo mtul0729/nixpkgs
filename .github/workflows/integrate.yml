@@ -47,11 +47,14 @@ jobs:
 
       # nixpkgs 的历史里绝大多数是 blob，而合成只需要最终树和分支改动涉及的
       # blob；blob:none 让这一步从十几分钟降到一两分钟，检出时再按需拉当前树。
+      # 和 update 共用同一条缓存：这里没有 matrix，strategy.job-index 会解析成 0，
+      # 旧写法只是碰巧和 update 的第 0 条腿撞在一起。共用一个 key 之后 key 0 被
+      # 淘汰时也不会再退回到随机的邻居缓存。
       - name: Restore the nixpkgs git cache
         uses: actions/cache@v6
         with:
           path: nixpkgs/.git
-          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-${{ strategy.job-index }}
+          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}
           restore-keys: |
             nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
 
