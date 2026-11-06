@@ -22,3 +22,4 @@ pkg/siyuan: siyuan,siyuan-preview,siyuan-server
 pkg/disktree
 pkg/strata
 pkg/helix-fcitx-focus
+pkg/noop
