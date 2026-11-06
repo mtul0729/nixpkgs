@@ -24,13 +24,13 @@ let
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "noop";
-  version = "0.1.9";
+  version = "0.1.10";
 
   src = fetchFromGitHub {
     owner = "huacnlee";
     repo = "noop";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-AM539NOvIKYBiLpESyN7ycSU6YkET00QzoaUImfI7Pw=";
+    hash = "sha256-VjhkM7celLkweAeUrU/mWcRElOCH2xJAA95DdVqRppI=";
   };
 
   nativeBuildInputs = [
