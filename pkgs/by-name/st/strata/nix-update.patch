@@ -1,0 +1,217 @@
+--- a/src/services/update_check.rs
++++ b/src/services/update_check.rs
+@@ -752,6 +752,7 @@
+         .spawn(move || {
+             let result = match update_method {
+                 UpdateMethod::InPlace => fetch_update(channel, &installed, force),
++                UpdateMethod::Nix => UpdateCheck::UpToDate,
+                 UpdateMethod::Aur => fetch_package_update(&installed, aur_repository_version),
+                 UpdateMethod::Omarchy => {
+                     fetch_package_update(&installed, omarchy_repository_version)
+--- a/src/services/update_install/tests.rs
++++ b/src/services/update_install/tests.rs
+@@ -16,8 +16,8 @@
+     download::DownloadTimeouts, download_to_file_bounded, download_to_file_with, is_old_instance,
+     package_repository_version_for, parse_aur_package_version, parse_package_version,
+     refresh_desktop_metadata, repository_database_version, restore_rollback, retire_old_instances,
+-    stage_binary_path, stage_rollback, stage_workdir, update_method_for, verified_download_url,
+-    verify_staged_binary,
++    stage_binary_path, stage_rollback, stage_workdir, update_method_for,
++    update_method_for_marker, verified_download_url, verify_staged_binary,
+ };
+
+ #[test]
+@@ -266,6 +266,13 @@
+ }
+
+ #[test]
++fn nix_packaging_marker_defers_updates_to_nix() {
++    assert_eq!(update_method_for_marker("Nix"), UpdateMethod::Nix);
++    assert_eq!(update_method_for_marker(" nix "), UpdateMethod::Nix);
++    assert_eq!(update_method_for_marker("pacman"), UpdateMethod::Aur);
++}
++
++#[test]
+ fn stage_workdir_is_unique_per_call() {
+     let exe_dir = tempfile::tempdir().expect("create scratch exe dir");
+     let first = stage_workdir(exe_dir.path()).expect("stage first workdir");
+--- a/src/services/update_install.rs
++++ b/src/services/update_install.rs
+@@ -48,6 +48,7 @@
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub enum UpdateMethod {
+     InPlace,
++    Nix,
+     Aur,
+     Omarchy,
+     Pacman,
+@@ -172,8 +173,8 @@
+ /// Determines whether the running executable may be updated in place or is
+ /// owned by pacman and must be updated through the operating system.
+ pub fn update_method() -> UpdateMethod {
+-    if InstallSource::detect().is_managed() {
+-        return UpdateMethod::Aur;
++    if let Some(managed) = InstallSource::detect().managed() {
++        return update_method_for_marker(&managed.manager());
+     }
+     let Ok(executable) = installed_executable() else {
+         return UpdateMethod::InPlace;
+@@ -181,6 +182,14 @@
+     update_method_for(&executable, Path::new(PACMAN), Path::new(OS_RELEASE))
+ }
+
++fn update_method_for_marker(manager: &str) -> UpdateMethod {
++    if manager.trim().eq_ignore_ascii_case("nix") {
++        UpdateMethod::Nix
++    } else {
++        UpdateMethod::Aur
++    }
++}
++
+ fn update_method_for(executable: &Path, pacman: &Path, os_release: &Path) -> UpdateMethod {
+     let package_owned = match Command::new(pacman)
+         .args(["--query", "--owns", "--quiet", "--"])
+@@ -511,6 +520,11 @@
+     ensure_self_managed(InstallSource::detect())?;
+     match update_method() {
+         UpdateMethod::InPlace => {}
++        UpdateMethod::Nix => {
++            return Err(InstallStop::Failed(crate::i18n::tr(
++                "This installation is managed by Nix.",
++            )));
++        }
+         UpdateMethod::Aur => {
+             return Err(InstallStop::Failed(crate::i18n::tr(
+                 "This installation is managed by its package manager.",
+--- a/src/ui/settings.rs
++++ b/src/ui/settings.rs
+@@ -1181,7 +1181,9 @@
+
+     preferences.append(&update_row);
+     let options = settings_group(&preferences, "PREFERENCES");
+-    options.append(&automatic_updates_option(&manager, update_method));
++    if update_method != UpdateMethod::Nix {
++        options.append(&automatic_updates_option(&manager, update_method));
++    }
+     let channel_row = append_channel_option(&options, manager.clone(), managed, update_method);
+     if update_method == UpdateMethod::InPlace {
+         options.append(
+@@ -1320,6 +1322,7 @@
+         "Check for updates automatically",
+         match method {
+             UpdateMethod::InPlace => "Look for a new release on GitHub when Strata starts.",
++            UpdateMethod::Nix => unreachable!("Nix updates are handled outside Strata"),
+             UpdateMethod::Aur => "Check the AUR for a newer packaged release when Strata starts.",
+             UpdateMethod::Omarchy => {
+                 "Check the Omarchy package repository for a newer release when Strata starts."
+@@ -1762,7 +1765,7 @@
+ fn effective_update_channel(selected: Channel, update_method: UpdateMethod) -> Channel {
+     match update_method {
+         UpdateMethod::InPlace | UpdateMethod::Aur => selected,
+-        UpdateMethod::Omarchy | UpdateMethod::Pacman => Channel::Stable,
++        UpdateMethod::Nix | UpdateMethod::Omarchy | UpdateMethod::Pacman => Channel::Stable,
+     }
+ }
+
+@@ -1989,7 +1992,7 @@
+                                     button.set_label(&crate::i18n::tr(match update_method {
+                                         UpdateMethod::Aur => aur_update_action_label(),
+                                         UpdateMethod::Omarchy => "Open Omarchy Update",
+-                                        UpdateMethod::Pacman => "Check again",
++                                        UpdateMethod::Nix | UpdateMethod::Pacman => "Check again",
+                                         UpdateMethod::InPlace => unreachable!(),
+                                     }));
+                                 } else {
+@@ -2564,6 +2567,7 @@
+         &crate::i18n::tr(match (update_method, offer) {
+             (UpdateMethod::InPlace, UpdateOffer::Available) => "Download update",
+             (UpdateMethod::InPlace, UpdateOffer::Chosen) => "Install release",
++            (UpdateMethod::Nix, _) => "Close",
+             (UpdateMethod::Aur, _) => aur_action,
+             (UpdateMethod::Omarchy, _) => "Open Omarchy Update",
+             (UpdateMethod::Pacman, _) => "Close",
+@@ -2618,7 +2622,7 @@
+             UpdateOffer::Available => "Review the release notes before downloading the update.",
+             UpdateOffer::Chosen => "Review the release notes before installing this release.",
+         }),
+-        UpdateMethod::Aur => InstallSource::detect()
++        UpdateMethod::Nix | UpdateMethod::Aur => InstallSource::detect()
+             .managed()
+             .map(update_dialog_status)
+             .unwrap_or_else(|| {
+@@ -2774,7 +2778,7 @@
+             });
+             return;
+         }
+-        if update_method == UpdateMethod::Pacman {
++        if matches!(update_method, UpdateMethod::Nix | UpdateMethod::Pacman) {
+             dismiss_modal_layer(&action_layer, &action_overlay, action_root.as_ref());
+             button.set_sensitive(false);
+             return;
+@@ -3094,6 +3098,15 @@
+     };
+     match update_method {
+         UpdateMethod::InPlace => version,
++        UpdateMethod::Nix => match InstallSource::detect().managed() {
++            Some(managed) => rust_i18n::t!(
++                "%{version} · Managed by %{manager}",
++                version = version,
++                manager = managed.manager()
++            ),
++            None => rust_i18n::t!("%{version} · Managed by Nix", version = version),
++        }
++        .into_owned(),
+         UpdateMethod::Aur => match InstallSource::detect().managed() {
+             Some(managed) => rust_i18n::t!(
+                 "%{version} · Managed by %{manager}",
+@@ -3139,6 +3152,7 @@
+             let version = glib::markup_escape_text(&release.version);
+             match update_method {
+                 UpdateMethod::InPlace | UpdateMethod::Aur => rust_i18n::t!("Update available: <a href=\"%{value1}\">v%{value2}</a>", value1 = url, value2 = version),
++                UpdateMethod::Nix => rust_i18n::t!("Update available: <a href=\"%{value1}\">v%{value2}</a> · Update through Nix", value1 = url, value2 = version),
+                 UpdateMethod::Omarchy => rust_i18n::t!("Update available: <a href=\"%{value1}\">v%{value2}</a> · Run “omarchy update” to install", value1 = url, value2 = version),
+                 UpdateMethod::Pacman => rust_i18n::t!("Update available: <a href=\"%{value1}\">v%{value2}</a> · Install through a full system update", value1 = url, value2 = version),
+             }
+--- a/src/ui/settings/tests/update_dialog.rs
++++ b/src/ui/settings/tests/update_dialog.rs
+@@ -289,6 +289,26 @@
+ }
+
+ #[test]
++fn nix_update_dialog_closes_without_starting_an_install() {
++    gtk_test(
++        "ui::settings::tests::update_dialog::nix_update_dialog_closes_without_starting_an_install",
++        || {
++            let guard = install_guard();
++            guard.set(false);
++            let installer = FakeInstaller::default();
++            let (window, dialog) = open_dialog_for(&installer, &release(), UpdateMethod::Nix);
++
++            assert_eq!(dialog.action.label().as_deref(), Some("Close"));
++            dialog.action.emit_clicked();
++
++            wait_until_dismissed(&dialog);
++            assert!(installer.requests().is_empty());
++            window.destroy();
++        },
++    );
++}
++
++#[test]
+ fn finalizing_blocks_every_dismisser_until_the_install_ends() {
+     gtk_test(
+         "ui::settings::tests::update_dialog::finalizing_blocks_every_dismisser_until_the_install_ends",
+--- a/src/ui/window/composition/settings.rs
++++ b/src/ui/window/composition/settings.rs
+@@ -202,6 +202,11 @@
+         UpdateMethod::InPlace => {
+             rust_i18n::t!("Install Strata v%{value1}", value1 = release.version).into_owned()
+         }
++        UpdateMethod::Nix => rust_i18n::t!(
++            "Strata v%{value1} is available through Nix",
++            value1 = release.version
++        )
++        .into_owned(),
+         UpdateMethod::Aur => rust_i18n::t!(
+             "Strata v%{value1} is available through %{value2}",
+             value1 = release.version,
