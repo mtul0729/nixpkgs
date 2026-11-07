@@ -1,0 +1,16 @@
+{
+  "stable": {
+    "version": "3.8.9",
+    "src": "sha256-uPkFreNcM7YMcgo4naLl/6dxayNeaYUi/HTexHLT+YI=",
+    "vendorHash": "sha256-+/5yfqqaIelH4uVgW94jbIqvBfn2wHAjwRxT0Q97YUs=",
+    "pnpmDeps": "sha256-vJopMM3DgtsQ/l7ts8zsXC9kMxQ5Un1mQ7QlqfpOPlY=",
+    "ocrAssets": "ocr-assets.json"
+  },
+  "preview": {
+    "version": "3.8.10-beta.2",
+    "src": "sha256-NTfVR7sCBklAM1yQP0raA06zI+LtvzuEn9OHhkx4C+Q=",
+    "vendorHash": "sha256-pRC+GuMRbilghb3r1j4dfNSaVCovbJH0ITwnZM/CtBI=",
+    "pnpmDeps": "sha256-WZtuvhBo1kTsm9Bmtr1MNJ/zoBBWVCIo29+IuopkcGw=",
+    "ocrAssets": "ocr-assets-preview.json"
+  }
+}
