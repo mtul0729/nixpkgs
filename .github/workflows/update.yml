@@ -16,7 +16,7 @@
 #
 # 任何一条会让腿停下来的路径（基线 rebase 冲突、升级失败、以前构建失败被标记、
 # 这次构建失败、推送被拒）都在 fork 上开一个 update-failed 的 issue，同一个标题只开
-# 一次、摘要没变就不重复评论；候选推上去之后自动关掉。
+# 一次、摘要没变就不重复评论；候选推上去、或者下一轮证明那次失败只是抖动之后自动关掉。
 #
 # 升级这一步会重试：nix-update 抓 release feed 只请求一次，一个 502 就能把腿打掉。
 # 网络抖动在重试里消化掉，issue 留给重试也救不回来的失败。
@@ -245,6 +245,22 @@ jobs:
             return 0
           }
 
+          # 一条腿没推东西也可能证明它自己是好的：nix-update 跑通、工作区干净，说明
+          # 没有新版本可升，那次「升级失败」只是抓 feed 时的一次 502。
+          # 只关标题正好是「升级失败」的 issue —— 构建失败、磁盘写满、推送被拒都还
+          # 挂着没解决，不能因为「没有新版本」被顺手关掉。
+          close_update_issues() {
+            local pkg="$1" comment="$2" n
+            export UPGRADE_TITLE="$BRANCH: $pkg 升级失败"
+            for n in $(gh issue list -R "$FORK" --label update-failed --state open --limit 1000 \
+              --json number,title \
+              --jq '[.[] | select(.title == env.UPGRADE_TITLE) | .number][]' || true); do
+              gh issue close "$n" -R "$FORK" --comment "$comment" >/dev/null \
+                || echo "::warning::$BRANCH: issue #$n 没关掉"
+            done
+            return 0
+          }
+
           # pkg/ 分支的基线按需移动：先把本次要验证的候选 rebase 到这一轮
           # fetch 的 unstable。没有包更新时这个候选不会推送；有新版本时，
           # 基线和包更新作为一个已经构建过的整体一起推。
@@ -346,6 +362,8 @@ jobs:
             fi
             if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
               echo "$pkg: already at $old"
+              close_update_issues "$pkg" \
+                "\`$pkg\` 仍是 $old：这一轮 \`nix-update\` 跑通了、没有可推的版本，上一次是抓 feed 时的网络抖动。"
               continue
             fi
             new=$(nix-instantiate --eval --raw -A "$pkg.version")
