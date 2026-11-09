@@ -15,6 +15,7 @@
   libsoup_3,
   glib-networking,
   openssl,
+  aws-lc,
   libayatana-appindicator,
   librsvg,
   dbus,
@@ -68,6 +69,9 @@ rustPlatform.buildRustPackage (finalAttrs: {
     webkitgtk_4_1
     libsoup_3
     glib-networking # TLS inside the webview
+    # rustPlatform.cargoSetupHook forces aws-lc-sys onto the system AWS-LC;
+    # without this the build script probes OpenSSL first and gives up.
+    aws-lc
     openssl # reqwest, via default-tls
     libayatana-appindicator # tray-icon feature
     librsvg
