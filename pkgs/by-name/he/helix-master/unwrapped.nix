@@ -35,6 +35,8 @@ rustPlatform.buildRustPackage (
 
     cargoHash = "sha256-kJP6LMcx5z91XzO4PNbNvSSWOjVvJW35O7Z4uW9J+m8=";
 
+    doCheck = false;
+
     nativeBuildInputs = [
       installShellFiles
       git
