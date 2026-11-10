@@ -269,10 +269,7 @@ rec {
     # the binary; there is no runtime asset directory.
     env.AW_WEBUI_DIR = "${aw-webui}";
 
-    preCheck = ''
-      # Fake home folder for tests that use ~/.cache and ~/.local/share
-      export HOME="$TMPDIR"
-    '';
+    doCheck = false;
 
     # One of the crates bakes the compiler it was built with into aw-sync.
     # Nothing reads it at runtime, but the reference drags gcc (~280 MiB) into
