@@ -1,9 +1,9 @@
 {
   "stable": {
-    "version": "3.8.9",
-    "src": "sha256-uPkFreNcM7YMcgo4naLl/6dxayNeaYUi/HTexHLT+YI=",
-    "vendorHash": "sha256-+/5yfqqaIelH4uVgW94jbIqvBfn2wHAjwRxT0Q97YUs=",
-    "pnpmDeps": "sha256-vJopMM3DgtsQ/l7ts8zsXC9kMxQ5Un1mQ7QlqfpOPlY=",
+    "version": "3.8.10",
+    "src": "sha256-XMiu0wZNaDRgSHfO4zXjiPJcrqS4p4k3ZXJcpphATtk=",
+    "vendorHash": "sha256-CiJK6xx+SOEeURiCDWG2dt6nz9Q9/m9EYZDbBkGW+Uo=",
+    "pnpmDeps": "sha256-ZhDK01n5ced3aCwxFcxXFJliy+SEQXvNAI+aOt2dMbc=",
     "ocrAssets": "ocr-assets.json"
   },
   "preview": {
