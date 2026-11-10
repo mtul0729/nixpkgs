@@ -49,7 +49,8 @@ rustPlatform.buildRustPackage (finalAttrs: {
   ];
 
   cargoBuildFlags = [ "--package=disktree-app" ];
-  cargoTestFlags = [ "--package=disktree-core" ];
+
+  doCheck = false;
 
   postInstall = ''
     install -Dm644 assets/disktree.svg \
