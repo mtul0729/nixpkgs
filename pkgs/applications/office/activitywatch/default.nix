@@ -1,4 +1,4 @@
-# aw-server-rust, aw-client-rust and aw-webui follow the 0.14.1 release. The
+# aw-server-rust, aw-client-rust and aw-webui follow serverVersion below. The
 # Python components stay pinned to the 0.13.2 bundle: 0.14.1 rewrote aw-notify
 # from Python to Rust (aw-notify-rs), so ${sources}/aw-notify no longer contains
 # a Python package. Move them over once the Rust notifier is packaged.
@@ -307,16 +307,16 @@ rec {
     makeCacheWritable = true;
     npmFlags = [ "--legacy-peer-deps" ];
 
-    patches = [
-      # 0.14.1 ships two over-escaped regex assertions in queries.test.node.ts
-      # that fail against the code at the tag itself; fix the escaping.
-      ./queries-test-escaping.patch
-
-      # Hardcode version to avoid the need to have the Git repo available at build time.
-      (replaceVars ./commit-hash.patch {
-        commit_hash = serverSources.rev;
-      })
-    ];
+    patches =
+      # 0.14.2 fixed the over-escaped regex assertions in queries.test.node.ts
+      # upstream; against that source the patch is reversed and fails to apply.
+      lib.optional (lib.versionOlder serverVersion "0.14.2") ./queries-test-escaping.patch
+      ++ [
+        # Hardcode version to avoid the need to have the Git repo available at build time.
+        (replaceVars ./commit-hash.patch {
+          commit_hash = serverSources.rev;
+        })
+      ];
 
     installPhase = ''
       runHook preInstall
