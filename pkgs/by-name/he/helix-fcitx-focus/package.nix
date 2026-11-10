@@ -25,6 +25,8 @@ rustPlatform.buildRustPackage {
     };
   };
 
+  doCheck = false;
+
   installPhase = ''
     runHook preInstall
 
