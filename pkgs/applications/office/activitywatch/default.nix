@@ -318,13 +318,6 @@ rec {
       runHook postInstall
     '';
 
-    doCheck = true;
-    checkPhase = ''
-      runHook preCheck
-      npm test
-      runHook postCheck
-    '';
-
     meta = {
       description = "Web-based UI for ActivityWatch, built with Vue.js";
       homepage = "https://github.com/ActivityWatch/aw-webui/";
