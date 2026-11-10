@@ -307,15 +307,12 @@ rec {
     makeCacheWritable = true;
     npmFlags = [ "--legacy-peer-deps" ];
 
-    patches =
-      # 0.14.2 fixed the over-escaped regex assertions in queries.test.node.ts
-      # upstream; against that source the patch is reversed and fails to apply.
-      lib.optional (lib.versionOlder serverVersion "0.14.2") ./queries-test-escaping.patch ++ [
-        # Hardcode version to avoid the need to have the Git repo available at build time.
-        (replaceVars ./commit-hash.patch {
-          commit_hash = serverSources.rev;
-        })
-      ];
+    patches = [
+      # Hardcode version to avoid the need to have the Git repo available at build time.
+      (replaceVars ./commit-hash.patch {
+        commit_hash = serverSources.rev;
+      })
+    ];
 
     installPhase = ''
       runHook preInstall
