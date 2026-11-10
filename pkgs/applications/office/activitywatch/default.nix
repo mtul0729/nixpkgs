@@ -33,12 +33,12 @@ let
     fetchSubmodules = true;
   };
 
-  serverVersion = "0.14.1";
+  serverVersion = "0.14.2";
   serverSources = fetchFromGitHub {
     owner = "ActivityWatch";
     repo = "activitywatch";
     rev = "v${serverVersion}";
-    sha256 = "sha256-Euom8p8pdwPRX7C4FuUZYp+6mhFaWIeGcVR4xOi+zXE=";
+    sha256 = "sha256-lAE9pTC9tGB0mIuYOPcsWyv66aOov/5uA8QblvmlrOw=";
     fetchSubmodules = true;
   };
 in
@@ -213,7 +213,7 @@ rec {
     buildFeatures = [ "cli" ];
     checkFeatures = [ "cli" ];
 
-    cargoHash = "sha256-x6Qp8nW3EbQbeVPrvV1UQdKMkU83qachrtNOGh30HWw=";
+    cargoHash = "sha256-8qbH7jlduLQhfrGMbpvZYs/BMojzaGOIa3+Prv0tlO0=";
 
     # See aw-server-rust: cargo-auditable panics on the workspace's
     # `cli = [ "dep:clap" ]` features.
@@ -239,7 +239,7 @@ rec {
 
     src = "${serverSources}/aw-server-rust";
 
-    cargoHash = "sha256-x6Qp8nW3EbQbeVPrvV1UQdKMkU83qachrtNOGh30HWw=";
+    cargoHash = "sha256-8qbH7jlduLQhfrGMbpvZYs/BMojzaGOIa3+Prv0tlO0=";
 
     # cargo-auditable 0.7.6 panics on this workspace's `cli = [ "dep:clap" ]`
     # features ("does not have feature clap" during cargo metadata).
@@ -302,7 +302,7 @@ rec {
     src = "${serverSources}/aw-server-rust/aw-webui";
 
     nodejs = nodejs_22;
-    npmDepsHash = "sha256-8/eM6t9bOdqXkCTgqF4tcDwnTXdcq1jPL6Wayijt+is=";
+    npmDepsHash = "sha256-XJuIBFNdm8he7OF3X6Szxo74/usfIcwtrLPPY3HYnlU=";
 
     makeCacheWritable = true;
     npmFlags = [ "--legacy-peer-deps" ];
@@ -310,8 +310,7 @@ rec {
     patches =
       # 0.14.2 fixed the over-escaped regex assertions in queries.test.node.ts
       # upstream; against that source the patch is reversed and fails to apply.
-      lib.optional (lib.versionOlder serverVersion "0.14.2") ./queries-test-escaping.patch
-      ++ [
+      lib.optional (lib.versionOlder serverVersion "0.14.2") ./queries-test-escaping.patch ++ [
         # Hardcode version to avoid the need to have the Git repo available at build time.
         (replaceVars ./commit-hash.patch {
           commit_hash = serverSources.rev;
