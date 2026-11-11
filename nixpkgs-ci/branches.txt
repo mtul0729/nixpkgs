@@ -18,9 +18,9 @@ pkg/helix
 pkg/cosmic-desktop-mcp
 pkg/activitywatch: aw-server-rust,aw-client-rust
 pkg/fcitx5-vinput
+pkg/happy-coder
 pkg/siyuan: siyuan,siyuan-preview,siyuan-server
 pkg/disktree
 pkg/strata
 pkg/helix-fcitx-focus
-pkg/noop
 pkg/codex
