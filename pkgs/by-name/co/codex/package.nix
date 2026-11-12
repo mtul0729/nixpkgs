@@ -23,7 +23,6 @@
   },
   linkFarm,
   lld,
-  nix-update-script,
   oniguruma,
   pkg-config,
   openssl,
@@ -35,7 +34,6 @@
   writeText,
   zstd,
   installShellCompletions ? stdenv.buildPlatform.canExecute stdenv.hostPlatform,
-  _experimental-update-script-combinators,
 }:
 let
   supportsVoice =
@@ -72,17 +70,17 @@ let
 in
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "codex";
-  version = "0.167.1";
+  version = "0.167.2";
 
   src = fetchFromGitHub {
     owner = "openai";
     repo = "codex";
-    rev = finalAttrs.buildCommit;
-    hash = "sha256-S63Qd9OGCACz1EK/IzH6LGsZxMovk0UBkOKtv/jnQ+I=";
+    rev = "rust-v${finalAttrs.version}";
+    hash = "sha256-si822Nidf0AXpADOczhwz8sftOYwZ/zIQ7WKzyveiKM=";
   };
 
   # Matching client/helper stamps; build_id() requires a full commit SHA.
-  buildCommit = "0a94398fa60c4fac0e7659e4213a0a36e613dd46";
+  buildCommit = "ce21072c90d32c40af7a55b60b2fb35c84a43a6a";
 
   sourceRoot = "${finalAttrs.src.name}/codex-rs";
 
@@ -275,17 +273,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
   doInstallCheck = true;
   nativeInstallCheckInputs = [ versionCheckHook ];
 
-  passthru.updateScript = _experimental-update-script-combinators.sequence [
-    ./update-build-commit.sh
-    (nix-update-script {
-      extraArgs = [
-        "--use-github-releases"
-        "--version-regex"
-        "^rust-v(\\d+\\.\\d+\\.\\d+)$"
-      ];
-    })
-    ./update-librusty.sh
-  ];
+  passthru.updateScript = ./update.sh;
 
   passthru.tests = {
     app-server-daemon = callPackage ./test-app-server-daemon.nix { codex = finalAttrs.finalPackage; };
