@@ -13,7 +13,6 @@ Looking for nixpkgs itself? You want [NixOS/nixpkgs](https://github.com/NixOS/ni
 | `magpie` | Desktop client for "every agent's model, one place" |
 | `dashbeam` | P2P file transfer with NAT hole punching, built on iroh |
 | `helix-master` | Post-modern modal text editor, tracking upstream `master`; `helix` itself stays on nixpkgs' release |
-| `cosmic-desktop-mcp` | MCP server for driving a COSMIC/Wayland desktop |
 | `activitywatch` | Automatic time tracker: `aw-server-rust`, `aw-webui` and the watchers |
 | `fcitx5-vinput` | Voice input addon for Fcitx5, local or cloud ASR |
 | `siyuan` | Privacy-first personal knowledge management system |
@@ -53,7 +52,6 @@ nixpkgs.overlays = [
       magpie
       dashbeam
       helix
-      cosmic-desktop-mcp
       activitywatch
       fcitx5-vinput
       siyuan
