@@ -75,7 +75,7 @@ A docs-only push to `master` costs `ci-check` (~15 s) and nothing else.
 ### update
 
 One matrix leg per branch. A leg builds a private `bot` candidate and does
-**rebase → upgrade → verify → push** in the same workspace, so a branch never receives
+**rebase → upgrade → verify → push** in the same worktree, so a branch never receives
 a commit that has not been built:
 
 1. fetch the branch and current `nixos-unstable`, find their merge base, and rebase the
@@ -211,13 +211,14 @@ published.
 `update` never leaves a broken commit on the branch: the build fails, nothing is
 committed, and the leg reports an `update-failed` issue. To iterate:
 
-1. `jj workspace add ../fix-<name> -r 'pkg/<name>@origin'`
-2. fix, then run the checks from *Adding a package* above plus `nixfmt`
-3. push the branch
-4. `gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/<name> -f verify_only=true`
+1. `git fetch origin pkg/<name>`
+2. `git worktree add ../fix-<name> -b fix/<name> origin/pkg/<name>`
+3. fix, then run the checks from *Adding a package* above plus `nixfmt`
+4. push `HEAD` to `pkg/<name>` with the `--force-with-lease` form from `AGENTS.md`
+5. `gh workflow run update.yml -R mtul0729/nixpkgs -f only=pkg/<name> -f verify_only=true`
    rebuilds the candidate on current `nixos-unstable` and runs the two checks without
    touching `nix-update` (~2-3 minutes)
-5. `gh workflow run integrate.yml -R mtul0729/nixpkgs` publishes it into `integration`
+6. `gh workflow run integrate.yml -R mtul0729/nixpkgs` publishes it into `integration`
 
 Do not make a failing build pass with `--impure` or a local override. If a package cannot
 build, leave the branch alone and say so. `doCheck = false` is the deliberate fork policy
@@ -260,17 +261,18 @@ done
 ## Working on the fork locally
 
 The repository is large (~4.4 GB of history), so do not clone it again for a second
-working copy — add a jj workspace, which shares the object store:
+working copy — add a git worktree, which shares the object store:
 
 ```bash
-jj workspace add ../nixpkgs-fork -r nixos-unstable@upstream
+git fetch upstream
+git worktree add ../nixpkgs-fork -b <branch> upstream/nixos-unstable
 ```
 
-This sandbox caps address space at 4 GB, which is less than the repo, so heavy `jj` /
-`git` operations have to run outside the cap:
+This sandbox caps address space at 4 GB, which is less than the repo, so heavy `git`
+operations have to run outside the cap:
 
 ```bash
-systemd-run --user --quiet --pipe --wait --collect bash -c 'cd ../nixpkgs-fork && jj ...'
+systemd-run --user --quiet --pipe --wait --collect bash -c 'cd ../nixpkgs-fork && git ...'
 ```
 
 Editing and `nix build` are unaffected.
@@ -282,8 +284,10 @@ Editing and `nix build` are unaffected.
   one line per hour.
 - Pushing `integration` needs `PUSH_TOKEN` (a PAT with `workflow` scope). `GITHUB_TOKEN`
   is rejected because the branch introduces workflow files.
-- Shallow clones cannot be amended safely: `git commit --amend` in a depth-1 clone drops
-  the parent and produces an unrelated history. Work through jj, or fetch enough depth.
+- Shallow clones cannot be amended safely: `git commit --amend` at a shallow boundary drops
+  the parent and produces an unrelated history. This checkout was unshallowed on
+  2026-11-12 and should stay that way; re-adding `--depth` recreates both that hazard and
+  the costly boundary list that used to make every fetch look hung.
 - `nixpkgs` has its own `ci/` directory; personal files belong in `nixpkgs-ci/`.
-- Upstream's `.gitignore` ignores `/AGENTS.md`. Ignore rules do not apply to tracked files, so the file is committed normally; the rule only means a freshly created copy has to be added with `jj file track --include-ignored` (or `git add -f`). This fork does not modify `.gitignore` for it.
+- Upstream's `.gitignore` ignores `/AGENTS.md`. Ignore rules do not apply to tracked files, so the file is committed normally; the rule only means a freshly created copy has to be added with `git add -f AGENTS.md`. This fork does not modify `.gitignore` for it.
 - An `updateScript` with a `nix-shell` shebang (`#!nix-shell -p ...`) evaluates `import <nixpkgs>` **before** the script body runs. CI runners have no `NIX_PATH`, so such scripts need `-I nixpkgs=.` in the shebang (helix does this) or they fail without ever reaching the package logic.

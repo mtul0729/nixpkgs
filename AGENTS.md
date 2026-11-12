@@ -47,8 +47,8 @@ The same rule covers **how a package is built**, not only how it is structured:
 
 - `master` carries only CI files and documentation, never package code. It may hold
   more than one commit; what matters is that it stays based on current `nixos-unstable`,
-  which CI redoes hourly. Add commits normally (`jj new master@origin`, edit, push)
-  instead of rewriting a single amended commit.
+  which CI redoes hourly. Add commits normally instead of rewriting a single amended
+  commit.
 - Package code never goes on `master`. One topic branch per package.
 - **A topic branch must descend from the branch the pipeline uses** (`nixos-unstable`),
   not from `master`. It need not track the upstream tip: `update` builds a private
@@ -64,84 +64,74 @@ The same rule covers **how a package is built**, not only how it is structured:
 - Every upstream workflow is already `disabled_manually`. Do not re-enable any of them;
   `nixpkgs-ci` is the only one meant to run.
 
-## Workspaces
+## Worktrees
 
-The repository root (`default`) is the long-lived view of the documentation on `master`.
-Its `@` must remain a clean, empty descendant of `master@origin`. Other agents may be using
+The repository root is the long-lived view of the documentation on `master`. It must stay
+a clean checkout of `origin/master` with `master` checked out. Other agents may be using
 the same checkout concurrently, so it is never an editing surface: do not change files
-there, `jj edit` a topic commit there, or run `jj new <topic>` to bring code into it.
+there, do not commit there, and do not check out a topic branch there.
 
-Every edit, including an edit to `master`, happens in a dedicated jj workspace. Run
-`jj st` before editing; if the checkout is not the clean empty master descendant described
-above, leave it alone and create a workspace from the intended base.
+Every edit, including an edit to `master`, happens in a dedicated git worktree. Run
+`git status --short` before editing; if the checkout is not clean, leave it alone and
+create a worktree from the intended base.
 
 ```bash
 # Package code: the same base the CI pipeline uses.
-jj workspace add /tmp/ws-<package> -r nixos-unstable@upstream
+git fetch upstream
+git worktree add /tmp/ws-<package> -b pkg/<name> upstream/nixos-unstable
 
 # Documentation or CI files destined for master.
-jj workspace add /tmp/ws-docs-<topic> -r master@origin
+git fetch origin master
+git worktree add /tmp/ws-docs-<topic> -b docs/<topic> origin/master
 ```
 
-To continue existing work, pass its bookmark or change id to `-r` instead. In the
-workspace, use `jj new` to start a new change and edit normally. After pushing a commit,
-run `jj new` in that workspace before making another edit so the published commit is not
-rewritten.
-
-Remove workspaces when their work is finished:
+To continue existing work, check its branch out into a worktree instead of creating one:
 
 ```bash
-jj workspace forget <name>
-rm -rf /tmp/ws-<name>
+git fetch origin <branch>
+git worktree add /tmp/ws-<name> <branch>
 ```
 
-After a master workspace has pushed its commits, refresh the root checkout's read-only
+Commit in the worktree as usual. There is no separate "seal" step: once a commit is
+pushed it is published, and anything spotted later goes into a new commit. Remove a
+worktree when its work is finished:
+
+```bash
+git worktree remove /tmp/ws-<name>     # add --force if it holds ignored build output
+```
+
+After a master worktree has pushed its commits, refresh the root checkout's read-only
 view without editing there:
 
 ```bash
-jj git fetch
-jj new master@origin
+git fetch origin master
+git merge --ff-only origin/master      # run in the root checkout
 ```
 
-That keeps the root working copy on a clean empty descendant of the new `master@origin`.
+That keeps the root working copy on the current `origin/master`.
 
 ## Working on master
 
-Do not edit `master` in the root checkout. Its `@` is the clean empty view described in
-*Workspaces*. Before the first edit of a session, create or enter a master workspace and
-check that its `@` is not sitting on a commit that has already been pushed:
+Do not edit `master` in the root checkout. It is the clean view described in *Worktrees*.
+Before the first edit of a session, create a master worktree from the current remote tip:
 
 ```bash
-jj git fetch
-jj workspace add /tmp/ws-docs-<topic> -r master@origin
+git fetch origin master
+git worktree add /tmp/ws-docs-<topic> -b docs/<topic> origin/master
 cd /tmp/ws-docs-<topic>
-jj new -m "<what and why>"
 # edit
-```
-
-Then push and seal the change in that workspace:
-
-```bash
-jj git push -b master
-jj new                       # <- see the trap below; do this before any further edit
+git commit -m "<what and why>"
+git push origin HEAD:master
 ```
 
 `master` exists to carry the CI workflow, `branches.txt` and this documentation. Nothing
 consumes its commits: `integration` is built from `nixos-unstable` plus the topic
 branches, and those branches do not descend from `master`.
 
-A trap in that sequence: `jj describe` does not publish, and `jj git push` does not seal
-the change — `@` is still on it. An edit after the push rewrites the commit that is
-already on `master`, the next push reports `move sideways from <old> to <new>` instead of
-moving forward, and the change id starts rendering as `(divergent)`. It happened here:
-two rounds of follow-up edits went into a change already sitting on `master`, and
-`master` had to move sideways to take them. Run `jj new` right after pushing; whatever
-you spot later goes into its own commit, which is what the paragraph below asks for
-anyway.
-
-That is a fast-forward; no `--force`, no rewriting of earlier commits. CI rebases the
-whole stack onto the current `nixos-unstable` once an hour, so if upstream moved under
-you the rebase happens there — or locally with `jj rebase -d upstream/nixos-unstable`.
+That push is a fast-forward; no `--force`, no rewriting of earlier commits. CI rebases the
+whole stack onto the current `nixos-unstable` once an hour and force-pushes its result, so
+if upstream moved under you the rebase happens there — or locally with `git rebase
+upstream/nixos-unstable` before pushing.
 
 Do not squash the history into one commit, and do not amend published commits here. Each
 rule in this file and in `nixpkgs-ci/README.md` earned its own commit for a reason;
@@ -188,7 +178,7 @@ Read both before starting.
 
 ## Adding or changing a package
 
-1. Start from `nixos-unstable@upstream` and add only `pkgs/by-name/<shard>/<name>/`
+1. Start from `upstream/nixos-unstable` and add only `pkgs/by-name/<shard>/<name>/`
    (package.nix plus helper files). Never copy an existing nixpkgs package under a
    different name.
 2. Declare `passthru.updateScript = nix-update-script { ... };`, or the bot ignores the
@@ -217,7 +207,7 @@ Read both before starting.
    fork** — `integrate` fetches every listed branch and fails hard if one is missing.
 5. Push the branch, then `gh workflow run update.yml -R mtul0729/nixpkgs -f only=<branch>`.
 
-Push without touching the remote configuration or moving bookmarks:
+Push without touching the remote configuration:
 
 ```bash
 git push --force-with-lease=refs/heads/<branch>:<old sha> \
@@ -286,57 +276,50 @@ and `pkgs/by-name/README.md` first. If a change would be hard to justify in an u
 PR, it is probably the wrong change for the fork too.
 ## Local environment
 
-- The repository is large (~4.4 GB). There is no artificial memory cap, but any jj revset
-  that walks upstream history is slow — the default log revset once took 57 s because of
-  the remote bookmarks. **Put a `timeout` on every jj/git command** and do not iterate on
-  revsets blindly.
-- **The clone is partial and shallow, and jj cannot fill it in.** `remote.upstream` is a
-  promisor remote with `partialclonefilter = blob:none`, and `.git/shallow` carries ~11.8k
-  boundaries. jj's git backend does not fetch promisor blobs lazily, so anything whose tree
-  has not been materialised fails with `Object … of type file not found`: `jj file show -r
-  <rev>`, `jj new <rev>`, and rebasing a branch onto a freshly fetched upstream commit all
-  break this way. Check `git config --get remote.upstream.partialclonefilter` before planning
-  to check out a new base. To put a commit on a tree jj cannot materialise, build it with git
-  plumbing (`read-tree`, `update-index --cacheinfo`, `commit-tree`, `update-ref`) and run
-  `jj git import` afterwards. Do not add `--depth=1` to a fetch: `blob:none` already limits
-  what is downloaded, and the cut leaves a new shallow root that a later plain fetch will not
-  remove — `git rev-list --max-parents=0` shows it, and only `--unshallow` undoes it.
-- Repo-scoped jj config lives at the path printed by `jj config path --repo`
-  (`~/.config/jj/repos/<id>/config.toml`), not in `.jj/repo/`. Set it with
-  `jj config set --repo`, never by hand-editing. Current settings narrow `revsets.log`
-  and restrict fetching (`remotes.upstream.fetch-bookmarks = "nixos-unstable"`),
-  because a plain `jj git fetch` otherwise imports ~290 upstream branches.
+- The repository is large (several GB of packfiles) and full-history walks are slow. **Put a
+  `timeout` on every git command**, scope `git log` with a range or `-n`, and do not
+  iterate on `git log --all` blindly.
+- **The clone is partial, but its commit history is complete.** Both remotes are promisor
+  remotes with `partialclonefilter = blob:none`, so blobs are fetched on demand and
+  `git show`, `git checkout` or a rebase that needs a new tree costs network. The old
+  `.git/shallow` (11.8k boundaries from past `--depth=1` fetches) was removed on
+  2026-11-12: with those boundaries every fetch sent the whole list and GitHub spent
+  minutes computing the pack, which looked like a hang. Keep it that way — `test ! -e
+  .git/shallow` and `git rev-list --max-parents=0 <rev>` both succeed today. Never add
+  `--depth=1`: the cut leaves a new shallow root that a later plain fetch does not remove,
+  and only `--unshallow` undoes it.
+- Fetching is restricted in `.git/config`: `upstream` maps only `nixos-unstable`
+  (`remote.upstream.fetch = +refs/heads/nixos-unstable:refs/remotes/upstream/nixos-unstable`),
+  because a plain `git fetch --all` otherwise pulls ~290 upstream branches. Set local
+  config with `git config --local`, never by hand-editing `.git/config`.
 - **Builds belong to CI; do not compile locally.** `nixpkgs-ci` builds every attribute a branch declares
   and puts the result in `mtul.cachix.org`, so local work is evaluation, not building. Where a store
   path is supposed to exist already, `nix-build … --max-jobs 0` proves it: that substitutes or fails
   instead of quietly starting a local build. If the path is missing, trigger the workflow — do not
   fall back to compiling.
-- Upstream `master` is not used by the pipeline: everything, including `trunk()`, is based on `nixos-unstable`. Fetch or diff it only when preparing an upstream pull request, to check whether a change already landed.
-- Do not clone the repository. If you genuinely need a working tree, `jj workspace add`
-  it, and `jj workspace forget <name>` plus delete the directory afterwards — leftover
-  workspaces clutter `jj log`.
+- Upstream `master` is not used by the pipeline: everything is based on `nixos-unstable`.
+  Fetch or diff it only when preparing an upstream pull request, to check whether a change
+  already landed.
+- Do not clone the repository. If you genuinely need a working tree, `git worktree add`
+  it, and `git worktree remove` it afterwards — leftover worktrees show up in
+  `git worktree list` and hold branches that look live.
 
-## Working with jj (not git)
+## Working with git
 
-Branches, commits and pushes go through jj. Do not reach for the git equivalent (new branch +
-cherry-pick) — it produces the wrong shape in this repo. Two rules:
+Branches, commits and pushes go through plain git. A few conventions keep the shape right:
 
-- **Express intent as a revset before hunting for a sha.** `nixos-unstable@upstream..pkg/<name>`
-  means "what this branch adds over its base" and follows fetches; a copied commit id like
-  `09063bd1` is a frozen position that goes stale.
-- **Pushing.** `jj git push --named <name>` needs the `NAME=REVISION` form — `--named
-  pr/<pkg>-<ver>=@`; a bare name is an error. To push an existing branch, use `-b <bookmark>`, and
-  if that branch exists on the remote but is not tracked locally, jj refuses with `Non-tracking
-  remote bookmark <branch>@origin exists`: `jj bookmark track <branch>@origin` first, then `-b`.
-- **Use jj wherever jj can do the job; reach for `git` only for what it genuinely cannot do.**
-  Mixing them is what makes jj's remote view stale: after a `git push`, `jj git push` refuses
-  with `references unexpectedly moved on the remote (reason: stale info)` until a
-  `jj git fetch`. So prefer `jj git push` / `jj git fetch` / `jj bookmark`; use git only for the
-  handful of things with no jj equivalent (a raw `git merge-base --is-ancestor` check, `git
-  rev-parse` for a sha another tool needs), and fetch afterwards if you pushed.
-- **Look syntax up, do not recall it.** jj moves fast: `jj <cmd> --help` and
-  `jj help -k revsets|glossary|bookmarks|config` are the authority, and a flag that existed in one
-  version is gone in the next.
+- **Express intent as a range before hunting for a sha.** `upstream/nixos-unstable..pkg/<name>`
+  means "what this branch adds over its base" and keeps working after a fetch; a copied
+  commit id like `09063bd1` is a frozen position that goes stale.
+- **Pushing.** Push a new branch with an explicit refspec that keeps the local name:
+  `git push origin HEAD:refs/heads/pkg/<name>`. To update an existing branch after a
+  rebase, use `--force-with-lease=refs/heads/<name>:<old sha>`, never a bare `--force`.
+  If the branch exists on the remote but not locally, `git fetch origin <branch>` first.
+- **Rebasing onto a new base.** `git rebase --onto upstream/nixos-unstable <old base>
+  pkg/<name>`, or plain `git rebase upstream/nixos-unstable` when the branch is already
+  based on that tip. Never rebase a branch whose tip has been published as a PR without
+  the force-with-lease form above.
+- **Look syntax up, do not recall it.** `git help <command>` is the authority.
 
 ## Verifying a run
 
@@ -367,4 +350,4 @@ substitutability: compare the store path's `.narinfo` on `mtul.cachix.org`.
 
 Upstream's `.gitignore` ignores `/AGENTS.md`. Tracked files are unaffected by ignore
 rules, so this file is committed normally; do not modify `.gitignore` for it, and if you
-ever recreate the file from scratch, add it with `jj file track --include-ignored`.
+ever recreate the file from scratch, add it with `git add -f AGENTS.md`.

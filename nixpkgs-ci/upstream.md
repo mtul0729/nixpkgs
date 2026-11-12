@@ -116,44 +116,44 @@ branch cannot serve both. **Never push `pkg/*` itself as the PR branch, and neve
 - Follow the decision tree in [`nixpkgs-conventions.md`](./nixpkgs-conventions.md) — `master`,
   unless the rebuild count pushes it to `staging`.
 - Never target `staging-next`.
-- `nixos-unstable` and `master` are not rivals here: `nixos-unstable@upstream` is an ancestor of
-  `master@upstream` (`git merge-base --is-ancestor` proves it), so re-basing a fork change onto
+- `nixos-unstable` and `master` are not rivals here: `upstream/nixos-unstable` is an ancestor of
+  `upstream/master` (`git merge-base --is-ancestor` proves it), so re-basing a fork change onto
   master is a re-base, not a rewrite.
 
 ### Build the copy
 
 ```bash
-jj git fetch --remote upstream --branch master   # upstream fetch is pinned to nixos-unstable; -b overrides it
-jj file show -r 'master@upstream' 'pkgs/by-name/<sh>/<pkg>/package.nix'   # has upstream already got it?
+git fetch upstream '+refs/heads/master:refs/remotes/upstream/master'
+git show upstream/master:pkgs/by-name/<sh>/<pkg>/package.nix   # has upstream already got it?
 ```
 
 ```bash
-jj duplicate -r 'nixos-unstable@upstream..pkg/<name>' --onto 'master@upstream'
-JJ_USER=<you> JJ_EMAIL=<you@example.com> jj metaedit -r <copy> --update-author -m '<pkg>: <old> -> <new>'
+branch=origin/pkg/<name>   # use the local pkg/<name> instead if it is ahead
+base=$(git merge-base upstream/nixos-unstable "$branch")
+git switch -c pr/<pkg>-<ver> upstream/master
+git cherry-pick "$base".."$branch"
 ```
 
-Duplicate the **range**, not the tip: `-r <tip>` drops earlier commits. Roots land on `--onto`
-and the rest stack in the original order, so history survives intact. Name the branch directly
-(`pkg/<name>`) rather than matching by pattern — most `pkg/*` branches live only on `origin`, so
-pattern matching needs `remote_bookmarks(glob:"pkg/*")`, which is what `revsets.log` uses.
+Cherry-pick the **range**, not the tip: cherry-picking only `pkg/<name>` drops earlier commits.
+The commits land on `upstream/master` in their original order, so history survives intact.
+Name the branch directly rather than relying on a pattern.
 
-The author has to be the person who will stand behind the PR. `jj describe` cannot change it — it
-refreshes the committer and leaves the author alone — so use `jj metaedit`, which changes metadata
-without touching content:
+The author has to be the person who will stand behind the PR. Cherry-pick preserves the
+original author, so adjust the copies when a bot or someone else wrote them:
 
-- `--update-author` takes the configured user; `JJ_USER`/`JJ_EMAIL` override it (also `--config
-  user.name` / `--config user.email`).
-- `--author 'Name <email>'` sets it directly, no environment needed.
-- Add `--update-author-timestamp` only if the timestamp should move too; by default it is kept.
-- `-m` sets the message in the same call, so one `metaedit` fixes author and message together.
-- Skip the author flag entirely when the fork commit is already authored by the person submitting.
+- `git commit --amend --no-edit --author='Name <email>'` changes the tip without touching
+  content or message.
+- For several commits, run
+  `git rebase upstream/master --exec 'git commit --amend --no-edit --author="Name <email>"'`.
+  Keep the original timestamps unless there is a reason to move them.
+- Skip the author change when the fork commit is already authored by the person submitting.
 
 The copy is decoupled from the original: later bot pushes to `pkg/*` do not move the PR, and work
 on the PR does not disturb what CI consumes. Confirm it afterwards:
 
 ```bash
-jj diff -r <copy> -s                      # complete change
-jj log -r 'master@upstream..<copy>' -T 'separate(" ", commit_id.short(), author.name(), author.email())'
+git diff --stat upstream/master...HEAD    # complete change
+git log --format='%h %an <%ae>' upstream/master..HEAD
                                           # complete history, and a human author
 ```
 
@@ -191,7 +191,7 @@ version, not a generic label, so it has to match the run that actually did the w
 ### Submit
 
 ```bash
-jj git push --named pr/<pkg>-<ver>=<copy> --remote origin
+git push origin HEAD:refs/heads/pr/<pkg>-<ver>
 gh pr create --repo NixOS/nixpkgs --base <master|staging> --head mtul0729:pr/<pkg>-<ver> --draft
 ```
 
@@ -240,7 +240,7 @@ they have to be able to answer questions about the change.
 
 ### After the merge
 
-- `jj bookmark delete` and `jj abandon` the copy.
+- `git branch -D pr/<pkg>-<ver>` and delete the remote branch if GitHub left it behind.
 - Backport only if the human wants the change in a release.
 - `branches.txt`: leave it alone. Dropping the line afterwards is a human decision.
 - A green run does not prove substitutability — compare the store path's `.narinfo` on
@@ -281,5 +281,5 @@ When the question is whether to adopt a change someone else proposed, not whethe
   exactly like a dead input path. Resolve the window's output, and convert from the window
   screenshot's own scale rather than the output's, before concluding that input does not work. If
   interaction was not exercised, say so.
-- **Clean up when the decision is made.** Branch, `branches.txt` line, workspace, build output. Keep
+- **Clean up when the decision is made.** Branch, `branches.txt` line, worktree, build output. Keep
   `notes/<pkg>-<pr>.md` only when a future reader would otherwise have to repeat the evaluation.
