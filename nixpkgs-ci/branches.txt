@@ -15,12 +15,9 @@ pkg/magpie: magpie-cli
 # 复用 helix.defaultGrammarsOverlay 和 helix-unwrapped，改这两个属性会让 steelix
 # 的缓存失效。
 pkg/helix
-pkg/cosmic-desktop-mcp
 pkg/activitywatch: aw-server-rust,aw-client-rust
 pkg/fcitx5-vinput
-pkg/happy-coder
 pkg/siyuan: siyuan,siyuan-preview,siyuan-server
 pkg/disktree
-pkg/strata
 pkg/helix-fcitx-focus
 pkg/codex
