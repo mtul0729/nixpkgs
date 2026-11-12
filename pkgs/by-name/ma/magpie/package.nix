@@ -42,7 +42,7 @@
 
 buildGoModule (finalAttrs: {
   pname = "magpie" + lib.optionalString (!withGui) "-cli";
-  version = "0.1.3830";
+  version = "0.1.3833";
 
   __structuredAttrs = true;
 
@@ -50,7 +50,7 @@ buildGoModule (finalAttrs: {
     owner = "yetone";
     repo = "magpie";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-QNCmhcqmtK5CJU/p73DmaBK1tPuQj6zcPYZpaw96sJ8=";
+    hash = "sha256-LnvAjzRSeW1Ttgzs83XmayVjvSTSrJMtBDl/iqaRog0=";
   };
 
   vendorHash = "sha256-1uxRG7QOibgmJBx99O5OQmIeCJ5V9zdZmsgGVwaKZbo=";
