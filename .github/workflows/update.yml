@@ -412,7 +412,10 @@ jobs:
                 -A "$a.drvPath" >/dev/null
               args+=(-A "$a")
             done
-            cachix watch-exec mtul -- nix-build "${args[@]}" --no-out-link
+            # cargo 的 -j 就是 NIX_BUILD_CORES。四个 rustc 一起跑时，链接阶段
+            # 会和它们抢同一份 16 GB 内存；留一个核给链接器和系统，峰值大约降
+            # 三分之一，代价是这条腿编译慢一些（仍远在 180 分钟以内）。
+            cachix watch-exec mtul -- nix-build "${args[@]}" --no-out-link --cores 3
           }
 
           if [ "$VERIFY_ONLY" = "true" ]; then
