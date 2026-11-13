@@ -116,9 +116,16 @@ The measured runner has a 145 GB root disk (109 GB free) but only 16 GB of RAM a
 of swap. A large Rust package can peak in memory while linking 1161 crates: when it did,
 the hosted runner was reclaimed and the log ended with `The runner has received a
 shutdown signal` (exit 143) instead of a Nix error. Every leg therefore adds an 8 GB
-swapfile before installing Nix and builds with `--cores 3`, so the linker does not
-compete with four `rustc` processes for the same memory. A `[resmon]` line each minute
-records memory and free space, so a killed leg leaves its last values in the log.
+swapfile before installing Nix.
+
+Parallelism is not the lever it appears to be. Measured on 2026-11-13: a leg capped at
+`--cores 3` sat at 3-6 GB resident while compiling and never touched swap, because the
+spike comes from the final link, which is a single process that `-j` cannot stagger.
+Capping the cores only made the leg slower, so builds use every core again and the
+swapfile absorbs the link. A `[resmon]` line every ten seconds records memory, swap, the
+largest resident process and free space. The link lasts a minute or two, so a per-minute
+sample stepped right over it, and the process column tells a linker spike apart from the
+compile phase.
 
 The baseline is a build input, not a branch that has to follow `nixos-unstable` every
 hour. There is no separate baseline updater: a successful package update carries the
