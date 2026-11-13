@@ -175,14 +175,16 @@ jobs:
         run: |
           set -euo pipefail
           # 大包从零编译要一个多小时，死在链接阶段时日志里只有 runner 的 shutdown，
-          # 没有 Nix 的错误。每分钟留一行资源占用，至少能看到它死前到了哪里；
+          # 没有 Nix 的错误。链接只持续一两分钟，一分钟一次的采样会整段跳过它，所以
+          # 十秒一行，并记下常驻内存最大的进程：rustc 还是链接器一眼可辨。
           # 正常结束（包括下面的 exit 0）时 trap 会停掉它。
           (
-            while sleep 60; do
-              printf '[resmon] %s mem=%s swap=%s root=%s\n' \
+            while sleep 10; do
+              printf '[resmon] %s mem=%s swap=%s top=%s root=%s\n' \
                 "$(date -u +%H:%M:%S)" \
                 "$(free -m | awk '/^Mem:/{print $3"/"$2"MB"}')" \
                 "$(free -m | awk '/^Swap:/{print $3"/"$2"MB"}')" \
+                "$(ps -eo rss=,comm= --sort=-rss | head -1 | awk '{printf "%.0fMB %s", $1/1024, $2}')" \
                 "$(df -BG / | awk 'NR==2{print $4" free, "$5" used"}')"
             done
           ) &
