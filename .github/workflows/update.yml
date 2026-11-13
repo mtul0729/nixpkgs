@@ -264,7 +264,89 @@ jobs:
           # pkg/ 分支的基线按需移动：先把本次要验证的候选 rebase 到这一轮
           # fetch 的 unstable。没有包更新时这个候选不会推送；有新版本时，
           # 基线和包更新作为一个已经构建过的整体一起推。
+          #
+          # 基线冲突里最常见的一类：上游也动了同一个包（通常就是一次版本
+          # bump），而分支上的版本更新。把分支侧的 package.nix 整份取过来
+          # 就是对的语义，但有两个前提：
+          #
+          #  1. 上游相对 merge base 只改了 version/hash/rev/tag 这类行 ——
+          #     取整份分支文件会把上游的其它修改（依赖、构建逻辑）一起丢掉，
+          #     那种冲突必须人看。
+          #  2. 分支 tip 的版本比上游新。分支上可能有好几次更新，中途那个
+          #     提交的版本甚至可能比上游旧；拿 tip 比才是分支真正的意图。
+          #
+          # 只对 pkgs/by-name/*/*/package.nix 生效，其余冲突仍交给人工。
+          upstream_bump_only() {
+            local f="$1" line text base_blob up_blob
+            base_blob=$(git rev-parse ":1:$f" 2>/dev/null) || return 1
+            up_blob=$(git rev-parse ":2:$f" 2>/dev/null) || return 1
+            while IFS= read -r line; do
+              case "$line" in
+                '+'*|'-'*) ;;
+                *) continue ;;
+              esac
+              case "$line" in
+                '+++'*|'---'*) continue ;;
+              esac
+              text="${line:1}"
+              case "$text" in
+                *'version = "'*';'*|*'hash = "'*';'*|\
+                *'sha256 = "'*';'*|*'sha512 = "'*';'*|\
+                *'rev = "'*';'*|*'tag = "'*';'*|\
+                *'buildCommit = "'*';'*) ;;
+                *) return 1 ;;
+              esac
+            done < <(git diff --unified=0 "$base_blob" "$up_blob")
+            return 0
+          }
+
+          resolve_version_bump() {
+            local f ours newer
+            local -a conflicted
+            mapfile -t conflicted < <(git diff --name-only --diff-filter=U)
+            [ ${#conflicted[@]} -gt 0 ] || return 1
+            for f in "${conflicted[@]}"; do
+              case "$f" in
+                pkgs/by-name/*/*/package.nix) ;;
+                *) return 1 ;;
+              esac
+              upstream_bump_only "$f" || return 1
+              ours=$(git show ":2:$f" 2>/dev/null \
+                | sed -n 's/^[[:space:]]*version = "\([^"]*\)";$/\1/p' | head -1)
+              newer=$(git show "refs/remotes/fork/$BRANCH:$f" 2>/dev/null \
+                | sed -n 's/^[[:space:]]*version = "\([^"]*\)";$/\1/p' | head -1)
+              [ -n "$ours" ] && [ -n "$newer" ] || return 1
+              [ "$newer" != "$ours" ] || return 1
+              [ "$(printf '%s\n%s\n' "$ours" "$newer" | sort -V | tail -1)" = "$newer" ] \
+                || return 1
+            done
+            for f in "${conflicted[@]}"; do
+              git checkout --theirs -- "$f"
+              git add -- "$f"
+            done
+            echo "$BRANCH: 自动消解版本冲突（取分支侧）：${conflicted[*]}"
+            return 0
+          }
+
+          auto_resolved=false
+          rebase_done=true
           if ! rebase_out=$(git rebase --onto "origin/$UPSTREAM_BRANCH" "$base" 2>&1); then
+            rebase_done=false
+            while resolve_version_bump; do
+              if cont_out=$(GIT_EDITOR=true git rebase --continue 2>&1); then
+                rebase_done=true
+                auto_resolved=true
+                break
+              fi
+              # 下一个提交又冲突：回到循环开头再按同一规则试一次。
+              if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+                continue
+              fi
+              rebase_out="$cont_out"
+              break
+            done
+          fi
+          if [ "$rebase_done" != true ]; then
             git rebase --abort || true
             echo "$rebase_out"
             upstream_short=$(git rev-parse --short "origin/$UPSTREAM_BRANCH")
@@ -435,3 +517,26 @@ jobs:
               git reset -q --hard "$before"
             fi
           done
+
+          # 只消解了 rebase 冲突、没有包升级时，上面的循环什么都没推。但分支
+          # 相对新基线的 diff 已经变了，不推的话 integrate 每小时还会撞同一个
+          # 冲突。和包升级走同一条判据：先构建，绿了再推。
+          if [ "$auto_resolved" = true ] && [ "$lease_tip" = "$old_tip" ]; then
+            echo "$BRANCH: 基线冲突已自动消解，构建后推送"
+            if verify "${NEW[@]}"; then
+              if git push --force-with-lease="refs/heads/$BRANCH:$lease_tip" \
+                "$FORK_URL" "HEAD:refs/heads/$BRANCH"; then
+                echo "pushed $BRANCH: baseline -> $UPSTREAM_BRANCH"
+                close_issues baseline "\`$BRANCH\` 的基线冲突已自动消解并推送。"
+              else
+                echo "::warning::$BRANCH: 基线推送失败（分支刚被改过）"
+                notify "$BRANCH: baseline 推送被拒" \
+                  "\`$BRANCH\` 的基线冲突已自动消解、也构建过了，但推不上去：分支刚被改过（多半是人推的）。下一轮重来。" \
+                  "$BRANCH: baseline"
+              fi
+            else
+              notify "$BRANCH: baseline 自动消解后构建失败" \
+                "\`$BRANCH\` 的基线冲突按「分支版本更新」自动消解了，但在新基线上构建失败；分支没有推送。要么改包，要么手工把基线 rebase 上去。" \
+                "$BRANCH: baseline"
+            fi
+          fi
