@@ -23,7 +23,6 @@
   },
   linkFarm,
   lld,
-  mold,
   oniguruma,
   pkg-config,
   openssl,
@@ -166,8 +165,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     gitMinimal
     installShellFiles
     pkg-config
-  ]
-  ++ lib.optionals stdenv.hostPlatform.isLinux [ mold ];
+  ];
 
   buildInputs = [
     aws-lc
@@ -216,13 +214,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
     # Link with lld on Darwin. nixpkgs' classic open-source ld64 fails to insert
     # ARM64 branch thunks for this binary, producing `b(l) ARM64 branch out of range`.
     NIX_CFLAGS_LINK = "-fuse-ld=${lib.getExe' lld "ld64.lld"}";
-  }
-  // lib.optionalAttrs stdenv.hostPlatform.isLinux {
-    # Link with mold on Linux. The default is binutils' bfd `ld`, the slowest
-    # and most memory-hungry linker for a binary this size: a 16 GB runner was
-    # reclaimed while linking it. `-fuse-ld` only takes a name, not a path --
-    # gcc looks up `ld.mold`, which the `mold` package provides on PATH.
-    NIX_CFLAGS_LINK = "-fuse-ld=mold";
   };
 
   # NOTE: part of the test suite requires access to networking, local shells,
