@@ -58,18 +58,21 @@ jobs:
           large-packages: false
           swap-storage: false
 
-      # nixpkgs 的历史里绝大多数是 blob，而合成只需要最终树和分支改动涉及的
-      # blob；blob:none 让这一步从十几分钟降到一两分钟，检出时再按需拉当前树。
-      # 和 update 共用同一条缓存：这里没有 matrix，strategy.job-index 会解析成 0，
-      # 旧写法只是碰巧和 update 的第 0 条腿撞在一起。共用一个 key 之后 key 0 被
-      # 淘汰时也不会再退回到随机的邻居缓存。
+      # update 现在写的是完整 .git，所以这里的 checkout 主要走本地；上游新提交
+      # 仍用 blob:none 拉，只按需取当前树的 blob。这个 job 只读缓存：如果它也
+      # 用 blob:none 的结果回存，就会把 update 的完整缓存重新变成 partial。
+      # key 按 UTC 日期滚动，与 update 共用同一天的那一份。
+      - name: Compute the cache date
+        id: cache-date
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Restore the nixpkgs git cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: nixpkgs/.git
-          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}
+          key: nixpkgs-git-full-${{ env.UPSTREAM_BRANCH }}-${{ steps.cache-date.outputs.date }}
           restore-keys: |
-            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
+            nixpkgs-git-full-${{ env.UPSTREAM_BRANCH }}-
 
       - name: Fetch upstream
         run: |
