@@ -64,16 +64,20 @@ jobs:
           large-packages: false
           swap-storage: false
 
-      # 只读 update/integrate 写的那份缓存。这个 workflow 测的是临时分支，如果
-      # 每个分支都存一份 1.7GB 的 .git，同样的 10GB 上限会被一堆一次性的 key
-      # 慢慢吃光；而且它自己的 fetch 会顺带把分支 ref 写进 .git，没必要回存。
+      # 只读 update 写的那份完整缓存。这个 workflow 测的是临时分支，如果每个分支
+      # 都存一份几 GB 的 .git，10GB 上限会被一堆一次性的 key 慢慢吃光；而且它自己
+      # 的 blob:none fetch 会顺带把分支 ref 写进 .git，回存只会污染完整缓存。
+      - name: Compute the cache date
+        id: cache-date
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Restore the nixpkgs git cache
         uses: actions/cache/restore@v6
         with:
           path: nixpkgs/.git
-          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}
+          key: nixpkgs-git-full-${{ env.UPSTREAM_BRANCH }}-${{ steps.cache-date.outputs.date }}
           restore-keys: |
-            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
+            nixpkgs-git-full-${{ env.UPSTREAM_BRANCH }}-
 
       - uses: cachix/install-nix-action@v31
         with:

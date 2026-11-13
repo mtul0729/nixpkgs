@@ -110,19 +110,23 @@ jobs:
           sparse-checkout: nixpkgs-ci
           sparse-checkout-cone-mode: false
 
-      # 所有 leg 共用一份 upstream 历史。GitHub 的缓存上限是 10GB/仓库，十条腿各
-      # 存一份 1.7GB 的 .git 会在同一轮里互相淘汰（key 0 和 6 就是这样消失的），
-      # 下一小时又得整份重下。分支自己的 ref 只有几十 KB，直接 fetch，不进缓存。
-      # 同一个 key 只有一个 leg 能保存成功，其余腿本来就会拿到 exact hit 后跳过。
+      # 所有 leg 共用一份完整 upstream 历史。partial clone 的 checkout 要为五万多个
+      # 文件按需拉 blob，即使没有版本更新也要几分钟；完整缓存让 checkout 全走本地。
+      # key 按 UTC 日期滚动：actions/cache 的 key 不可变，静态 key 会永远停在首次
+      # 保存的那天，每次都从那天开始补。restore-keys 接上前一天的完整缓存，当天只
+      # 有第一条腿上传。update 是唯一写入方；integrate/build-branch 只读，避免它们
+      # 用 blob:none 的 fetch 结果把缓存又写回 partial。
+      - name: Compute the cache date
+        id: cache-date
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Restore the nixpkgs git cache
         uses: actions/cache@v6
         with:
           path: nixpkgs/.git
-          key: nixpkgs-git-${{ env.UPSTREAM_BRANCH }}
-          # 过渡用：旧的 per-leg key（...-0 … ...-9）仍然可以捞出上游历史，
-          # 新 key 写进去之后这些条目会随 LRU 自然淘汰。
+          key: nixpkgs-git-full-${{ env.UPSTREAM_BRANCH }}-${{ steps.cache-date.outputs.date }}
           restore-keys: |
-            nixpkgs-git-${{ env.UPSTREAM_BRANCH }}-
+            nixpkgs-git-full-${{ env.UPSTREAM_BRANCH }}-
 
       - uses: cachix/install-nix-action@v31
         with:
@@ -160,7 +164,8 @@ jobs:
           cd nixpkgs
           git remote add origin "https://github.com/$UPSTREAM" 2>/dev/null \
             || git remote set-url origin "https://github.com/$UPSTREAM"
-          git fetch -q --filter=blob:none --no-tags origin "$UPSTREAM_BRANCH"
+          # 这里不能再用 blob:none：缓存要覆盖完整历史，checkout 才能本地完成。
+          git fetch -q --no-tags origin "$UPSTREAM_BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch -q --no-tags "https://github.com/$FORK" \
@@ -389,13 +394,21 @@ jobs:
             let
               pkgs = import ./. { };
               names = builtins.fromJSON ''$names'';
-            in {
-              missing = builtins.filter (n: !(builtins.hasAttr n pkgs)) names;
               updatable = builtins.filter
                 (n: (builtins.tryEval
                        (builtins.hasAttr n pkgs && (pkgs.\${n} ? updateScript))
                     ).value or false)
                 names;
+              field = n: f:
+                let r = builtins.tryEval (f pkgs.\${n});
+                in if r.success then r.value else null;
+            in {
+              missing = builtins.filter (n: !(builtins.hasAttr n pkgs)) names;
+              inherit updatable;
+              versions = builtins.listToAttrs
+                (map (n: { name = n; value = field n (p: p.version); }) updatable);
+              positions = builtins.listToAttrs
+                (map (n: { name = n; value = field n (p: p.meta.position); }) updatable);
             }")
           missing=$(jq -c .missing <<< "$eval_json")
           if [ "$missing" != "[]" ]; then
@@ -407,7 +420,11 @@ jobs:
 
           lease_tip=$old_tip
           for pkg in $(jq -r '.[]' <<< "$updatable"); do
-            old=$(nix-instantiate --eval --raw -A "$pkg.version")
+            old=$(jq -r --arg pkg "$pkg" '.versions[$pkg] // empty' <<< "$eval_json")
+            if [ -z "$old" ]; then
+              echo "::error::$BRANCH: $pkg 的 version 无法求值"
+              exit 1
+            fi
             before=$(git rev-parse HEAD)
             # nix-update 抓 releases.atom 只请求一次 —— 源码里没有重试，一个 502
             # 就直接抛出来，整条腿失败并开 issue。网络抖动是常态，重试比事后收拾
@@ -453,7 +470,7 @@ jobs:
             # Another package succeeding is not a human decision to retry this one.
             # Key on the version and package definition, not the whole branch or a
             # shared data file that a sibling's update may also rewrite.
-            position=$(nix-instantiate --eval --raw -A "$pkg.meta.position" 2>/dev/null || true)
+            position=$(jq -r --arg pkg "$pkg" '.positions[$pkg] // ""' <<< "$eval_json")
             pkg_scope=()
             if [ -n "$position" ]; then
               pkg_scope+=("$(dirname "${position%:*}")")

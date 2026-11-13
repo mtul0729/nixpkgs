@@ -92,6 +92,17 @@ a commit that has not been built:
 4. `nix-build -A <pkg>` inside `cachix watch-exec mtul`, so the result lands in the cache;
 5. only then `git commit` and a force-with-lease push of the candidate.
 
+The matrix restores one shared `.git` cache containing the complete upstream history,
+not a `blob:none` partial clone. Checking out a partial clone has to fetch blobs for
+roughly fifty thousand files on every leg even when no package changed; a complete cache
+makes the checkout local and leaves only the new upstream blobs for the hourly fetch. The
+cache key includes the UTC date because an `actions/cache` key is immutable: a static key
+would stay at the first save forever and every run would replay the changes since then.
+`restore-keys` carries the previous day forward, so only the first leg of a day uploads a
+new complete cache. The `update` workflow is the only writer; `integrate` and
+`build-branch` only restore it, because their filtered fetches must not turn the complete
+cache back into a partial one.
+
 The baseline is a build input, not a branch that has to follow `nixos-unstable` every
 hour. There is no separate baseline updater: a successful package update carries the
 baseline forward; otherwise the branch stays where it is. One case is automatic: a rebase
@@ -174,8 +185,8 @@ be plain `nixos-unstable`. The usual cause is a branch whose baseline has not ca
 with upstream yet, which `update` resolves on its next run. Fork refs are fetched with
 `blob:none` and the fork is a promisor remote, so `merge-tree` and the final checkout
 lazily fetch only the blobs they need. Fetching those refs without a filter makes Git
-reconcile the blobless upstream cache against the fork's complete trees and can spend
-minutes transferring almost no data.
+reconcile the upstream cache against the fork's complete trees and can spend minutes
+transferring almost no data.
 
 It has no schedule of its own: `update` runs hourly, so its completion is the signal,
 and a second hourly cron only repeated the same integration work and build minutes later.
