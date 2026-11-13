@@ -92,6 +92,12 @@ a commit that has not been built:
 4. `nix-build -A <pkg>` inside `cachix watch-exec mtul`, so the result lands in the cache;
 5. only then `git commit` and a force-with-lease push of the candidate.
 
+The queue is per branch, not per workflow. One leg can run for well over an hour -- a
+new version of a large Rust package has to be compiled from source on the runner, and no
+binary cache has it yet -- and a workflow-wide group would hold every other package's
+hourly update behind that leg. Legs of the same branch still run one at a time, and two
+runs that reach the same branch are separated by the force-with-lease push.
+
 The matrix restores one shared `.git` cache containing the complete upstream history,
 not a `blob:none` partial clone. Checking out a partial clone has to fetch blobs for
 roughly fifty thousand files on every leg even when no package changed; a complete cache

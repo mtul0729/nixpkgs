@@ -49,10 +49,6 @@ permissions:
   # 人（job 还是绿的，GitHub 不发邮件），issue 是这条腿上唯一能说话的通道。
   issues: write
 
-concurrency:
-  group: update
-  cancel-in-progress: false
-
 env:
   FORK: mtul0729/nixpkgs
   UPSTREAM: NixOS/nixpkgs
@@ -99,6 +95,13 @@ jobs:
     if: needs.plan.outputs.count != '0'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    # 队列按分支切，而不是整条 workflow 一把锁。codex 从零编译要一个多小时，
+    # 整条 workflow 级的 group 会让它顺带卡住其他所有包的整点升级：新的 run
+    # 一直排队，直到那条最慢的腿结束。同一条分支仍然串行，两条 run 碰同一个
+    # 分支时靠 --force-with-lease 兜底。
+    concurrency:
+      group: update-${{ matrix.branch }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
