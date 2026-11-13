@@ -64,6 +64,20 @@ jobs:
           large-packages: false
           swap-storage: false
 
+      # update 的每条腿都加这块 swap，因为托管 runner 只有 16 GB RAM。这个
+      # workflow 编的是同一种包（测试补丁、验证 rebase），峰值一样会撞上去。
+      - name: Add swap
+        run: |
+          set -euo pipefail
+          if [ "$(free -g | awk '/^Swap:/{print $2}')" -lt 10 ]; then
+            sudo fallocate -l 8G /swapfile-extra
+            sudo chmod 600 /swapfile-extra
+            sudo mkswap -q /swapfile-extra
+            sudo swapon /swapfile-extra
+          fi
+          free -m
+          swapon --show
+
       # 只读 update 写的那份完整缓存。这个 workflow 测的是临时分支，如果每个分支
       # 都存一份几 GB 的 .git，10GB 上限会被一堆一次性的 key 慢慢吃光；而且它自己
       # 的 blob:none fetch 会顺带把分支 ref 写进 .git，回存只会污染完整缓存。
