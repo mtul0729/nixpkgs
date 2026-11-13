@@ -101,7 +101,10 @@ would stay at the first save forever and every run would replay the changes sinc
 `restore-keys` carries the previous day forward, so only the first leg of a day uploads a
 new complete cache. The `update` workflow is the only writer; `integrate` and
 `build-branch` only restore it, because their filtered fetches must not turn the complete
-cache back into a partial one.
+cache back into a partial one. Measured on 2026-11-13: restoring the complete cache takes
+about 28 s (3.2 GB at ~200 MB/s plus untar), after which fetch, checkout and evaluation
+finish in about 10 s; a cold cache spends roughly 8 minutes on the same steps, so the
+first leg after the UTC date rolls is the slow one, not a hang.
 
 The baseline is a build input, not a branch that has to follow `nixos-unstable` every
 hour. There is no separate baseline updater: a successful package update carries the
