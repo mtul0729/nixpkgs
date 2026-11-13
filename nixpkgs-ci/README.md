@@ -112,13 +112,12 @@ about 28 s (3.2 GB at ~200 MB/s plus untar), after which fetch, checkout and eva
 finish in about 10 s; a cold cache spends roughly 8 minutes on the same steps, so the
 first leg after the UTC date rolls is the slow one, not a hang.
 
-The runner's root filesystem has only about 20 GB free, and a large Rust package can
-exceed that while linking 1161 crates: when it did, the hosted runner was reclaimed and
-the log ended with `The runner has received a shutdown signal` (exit 143) instead of a
-Nix error. Every leg therefore deletes the preinstalled toolchains this repo never uses
-and points Nix's `build-dir` at the larger `/mnt` temp disk, so the intermediate
-`target/` does not share the root disk with the `.git` cache. A `[resmon]` line each
-minute records memory and free space, so a killed leg leaves its last values in the log.
+The measured runner has a 145 GB root disk (109 GB free) but only 16 GB of RAM and 3 GB
+of swap. A large Rust package can peak in memory while linking 1161 crates: when it did,
+the hosted runner was reclaimed and the log ended with `The runner has received a
+shutdown signal` (exit 143) instead of a Nix error. Every leg therefore adds an 8 GB
+swapfile before installing Nix, and prints a `[resmon]` line a minute with memory and
+free space, so a killed leg leaves its last values in the log.
 
 The baseline is a build input, not a branch that has to follow `nixos-unstable` every
 hour. There is no separate baseline updater: a successful package update carries the
