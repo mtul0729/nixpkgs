@@ -115,8 +115,9 @@ first leg after the UTC date rolls is the slow one, not a hang.
 The measured runner has a 145 GB root disk (109 GB free) but only 16 GB of RAM and 3 GB
 of swap. A large Rust package can peak in memory while linking 1161 crates: when it did,
 the hosted runner was reclaimed and the log ended with `The runner has received a
-shutdown signal` (exit 143) instead of a Nix error. Every leg therefore adds an 8 GB
-swapfile before installing Nix.
+shutdown signal` (exit 143) instead of a Nix error. Every leg of `update`, and
+`build-branch` as well, therefore adds an 8 GB swapfile before installing Nix: the peak
+belongs to the package, not to which workflow happened to build it.
 
 Parallelism is not the lever it appears to be. Measured on 2026-11-13: a leg capped at
 `--cores 3` sat at 3-6 GB resident while compiling and never touched swap, because the
