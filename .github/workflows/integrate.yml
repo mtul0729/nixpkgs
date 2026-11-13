@@ -82,9 +82,9 @@ jobs:
             "+refs/heads/$UPSTREAM_BRANCH:refs/remotes/origin/$UPSTREAM_BRANCH"
           git -C nixpkgs checkout -q -f -B "$UPSTREAM_BRANCH" "origin/$UPSTREAM_BRANCH"
 
-      # Squash exits non-zero after pushing integration when one branch conflicts.
-      # Install the build tools before that point so the always() build still has
-      # Cachix available when the squash step reports that conflict.
+      # Squash can exit non-zero after pushing integration -- when no branch at
+      # all could be merged. Install the build tools before that point so the
+      # always() build still has Cachix available when it does.
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
@@ -183,7 +183,7 @@ jobs:
             else
               printf '%s\n' "$merge_out"
               failed+=("$b")
-              echo "::error::$b 与当前 integration 冲突，这次先跳过它"
+              echo "::warning::$b 与当前 integration 冲突，这次先跳过它"
             fi
             echo "::endgroup::"
           done
@@ -212,11 +212,16 @@ jobs:
           sort -u "$RUNNER_TEMP/attrs.txt" -o "$RUNNER_TEMP/attrs.txt"
           echo "will build: $(tr '\n' ' ' < "$RUNNER_TEMP/attrs.txt")"
 
-          # 有分支没合进来时 job 要红，但 integration 已经推出去了：其余包照常
-          # 有缓存，不会因为一个包卡住整条链。
+          # 一个分支没合进来不把整条链染红：integration 已经推出去了，其余包
+          # 照常有缓存。这类冲突多半是分支基线还没跟上上游，update 会先在
+          # rebase 时自动消解；没消解掉的由那一轮开 issue，这里只留 warning。
+          # 但一个都没合进来时 integration 等于退化成纯 upstream，那是真事故。
           if [ ${#failed[@]} -gt 0 ]; then
-            echo "::error::以下分支没能合并，integration 里暂时没有它们：${failed[*]}"
-            exit 1
+            echo "::warning::以下分支没能合并，integration 里暂时没有它们：${failed[*]}"
+            if [ ${#merged[@]} -eq 0 ]; then
+              echo "::error::一个分支都没合进来，integration 只剩 upstream"
+              exit 1
+            fi
           fi
 
       # 漂移检查：分支各自验证时用的是自己的 base，这里是今天的 unstable。

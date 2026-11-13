@@ -58,8 +58,10 @@ The same rule covers **how a package is built**, not only how it is structured:
 - **`ci-failed` is a human gate.** The same candidate is never retried automatically,
   and neither moving the upstream baseline nor updating a sibling package invalidates its
   tag. Decide whether to change the package, choose a different baseline, or delete the
-  tag. A successful package update is the only automatic path that moves a branch's
-  baseline; otherwise a human moves it.
+  tag. A branch's baseline moves automatically only on a successful package update, or
+  when a rebase conflict is an upstream bump of the same package: upstream changed only
+  `version`/`hash`/`rev`/`tag`-style lines, the branch tip is newer, and the resulting
+  candidate builds. Every other baseline conflict is a human decision.
 - Personal files belong in `nixpkgs-ci/`. Do not touch upstream's `ci/` directory.
 - Every upstream workflow is already `disabled_manually`. Do not re-enable any of them;
   `nixpkgs-ci` is the only one meant to run.
@@ -330,13 +332,15 @@ gh run view <id> -R mtul0729/nixpkgs --log --job=<job id>
 
 In `update` look for `branches: ...`, `updatable: [...]`, and `<pkg>: already at
 <version>` or `pushed <pkg>: <old> -> <new>`; a leg that built and pushed is the only
-thing that moves a branch. `already at` does not push a refreshed baseline. Hundreds of
-entries in `updatable` mean the branch-base rule above was violated — stop and fix the
-branch. `ci-failed/<branch>/<pkg>/<content-hash>` tags are the backoff record. The hash
-covers the package version and its definition directory's effective diff from upstream,
-not the baseline tree or a sibling package's changes, so neither a new `nixos-unstable`
-commit nor another package updating bypasses a human decision. Retrying the same candidate
-requires deleting that exact tag:
+thing that moves a branch. `already at` does not push a refreshed baseline unless a
+baseline conflict was auto-resolved; that candidate is built and pushed and logs
+`<branch>: 基线冲突已自动消解，构建后推送`. Hundreds of entries in `updatable` mean the
+branch-base rule above was violated — stop and fix the branch.
+`ci-failed/<branch>/<pkg>/<content-hash>` tags are the backoff record. The hash covers the
+package version and its definition directory's effective diff from upstream, not the
+baseline tree or a sibling package's changes, so neither a new `nixos-unstable` commit nor
+another package updating bypasses a human decision. Retrying the same candidate requires
+deleting that exact tag:
 
 ```bash
 git push <fork> :refs/tags/ci-failed/<branch>/<pkg>/<content-hash>

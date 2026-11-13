@@ -94,9 +94,15 @@ a commit that has not been built:
 
 The baseline is a build input, not a branch that has to follow `nixos-unstable` every
 hour. There is no separate baseline updater: a successful package update carries the
-baseline forward; otherwise the branch stays where it is and a human decides whether to
-move it. `integration` still gets today's baseline when it is regenerated. When a package
-does update, the baseline move and the package change are verified and pushed together.
+baseline forward; otherwise the branch stays where it is. One case is automatic: a rebase
+conflict caused by upstream bumping the same package, where upstream's side of the merge
+base touched only `version`/`hash`/`rev`/`tag`-style lines and the branch tip carries a
+newer version. The candidate takes the branch's `package.nix`, is verified like an update,
+and only then is the new baseline pushed. Anything else -- upstream also changed
+dependencies or build logic, the branch is not ahead, or the conflict is in another file
+-- is left for a human. `integration` still gets today's baseline when it is regenerated.
+When a package does update, the baseline move and the package change are verified and
+pushed together.
 
 A release-tag source that uses the default `nix-update-script` should pass its tag as
 `rev = "v${version}"`, not `tag = ...`, while CI runs `nix-update` 1.16.0.
@@ -142,9 +148,9 @@ for nine hours once, so every path that stops a leg now opens an issue on the fo
 labelled `update-failed`: `nix-update` failed, a previous build failed and its
 `ci-failed/` tag still stands, this build failed, or the push was rejected because the
 branch moved. One issue per branch-and-package-and-reason, plus one branch-level issue for
-a baseline rebase conflict; a repeat with the same summary adds nothing, a change of
-version appends one comment. A successful candidate push closes the package's issues and
-any baseline issue for the branch.
+a baseline rebase conflict that could not be auto-resolved; a repeat with the same summary
+adds nothing, a change of version appends one comment. A successful candidate push closes
+the package's issues and any baseline issue for the branch.
 
 An issue is therefore a report about a failure that survived the retries, not about the
 first dropped request. That distinction is the point of retrying in the first place: a
@@ -162,11 +168,14 @@ artifact, so replaying every update commit there provides no consumer value: `pk
 already spends minutes rebasing 134 update commits. The integration step instead uses
 `git merge-tree --write-tree --merge-base` once per branch and creates one commit with
 `git commit-tree`; the working tree is checked out only once at the end. A branch whose
-effective diff conflicts with the integration built so far is skipped and named in the
-error, exactly as before. Fork refs are fetched with `blob:none` and the fork is a promisor
-remote, so `merge-tree` and the final checkout lazily fetch only the blobs they need.
-Fetching those refs without a filter makes Git reconcile the blobless upstream cache against
-the fork's complete trees and can spend minutes transferring almost no data.
+effective diff conflicts with the integration built so far is skipped and named in a
+warning; the step only fails when every branch was skipped, since then `integration` would
+be plain `nixos-unstable`. The usual cause is a branch whose baseline has not caught up
+with upstream yet, which `update` resolves on its next run. Fork refs are fetched with
+`blob:none` and the fork is a promisor remote, so `merge-tree` and the final checkout
+lazily fetch only the blobs they need. Fetching those refs without a filter makes Git
+reconcile the blobless upstream cache against the fork's complete trees and can spend
+minutes transferring almost no data.
 
 It has no schedule of its own: `update` runs hourly, so its completion is the signal,
 and a second hourly cron only repeated the same integration work and build minutes later.
@@ -184,7 +193,7 @@ ever built, so two branches can each pass and still change each other's derivati
 stacked. A failure turns the run red but leaves `integration` published; the next hourly
 cycle regenerates it.
 
-A branch that fails to merge is skipped and named in the error; the others are still
+A branch that fails to merge is skipped and named in a warning; the others are still
 published.
 ## Adding a package
 
