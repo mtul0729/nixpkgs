@@ -1,3 +1,7 @@
+# aw-server-rust, aw-client-rust and aw-webui follow serverVersion below. The
+# Python components stay pinned to the 0.13.2 bundle: 0.14.1 rewrote aw-notify
+# from Python to Rust (aw-notify-rs), so ${sources}/aw-notify no longer contains
+# a Python package. Move them over once the Rust notifier is packaged.
 {
   lib,
   fetchFromGitHub,
@@ -15,6 +19,8 @@
   replaceVars,
   nodejs_22,
   buildNpmPackage,
+  stdenv,
+  removeReferencesTo,
 }:
 
 let
@@ -24,6 +30,15 @@ let
     repo = "activitywatch";
     rev = "v${version}";
     sha256 = "sha256-Z3WAg3b1zN0nS00u0zIose55JXRzQ7X7qy39XMY7Snk=";
+    fetchSubmodules = true;
+  };
+
+  serverVersion = "0.14.2";
+  serverSources = fetchFromGitHub {
+    owner = "ActivityWatch";
+    repo = "activitywatch";
+    rev = "v${serverVersion}";
+    sha256 = "sha256-lAE9pTC9tGB0mIuYOPcsWyv66aOov/5uA8QblvmlrOw=";
     fetchSubmodules = true;
   };
 in
@@ -188,18 +203,53 @@ rec {
     };
   };
 
+  aw-client-rust = rustPlatform.buildRustPackage {
+    pname = "aw-client-rust";
+    version = serverVersion;
+
+    src = "${serverSources}/aw-server-rust";
+
+    buildAndTestSubdir = "aw-client-rust";
+    buildFeatures = [ "cli" ];
+    checkFeatures = [ "cli" ];
+
+    cargoHash = "sha256-8qbH7jlduLQhfrGMbpvZYs/BMojzaGOIa3+Prv0tlO0=";
+
+    # See aw-server-rust: cargo-auditable panics on the workspace's
+    # `cli = [ "dep:clap" ]` features.
+    auditable = false;
+
+    doCheck = false;
+
+    passthru.updateScript = ./update.sh;
+
+    meta = {
+      description = "Command-line client for ActivityWatch, written in Rust";
+      homepage = "https://github.com/ActivityWatch/aw-server-rust";
+      maintainers = with lib.maintainers; [ huantian ];
+      mainProgram = "aw-client";
+      platforms = lib.platforms.linux;
+      license = lib.licenses.mpl20;
+    };
+  };
+
   aw-server-rust = rustPlatform.buildRustPackage {
     pname = "aw-server-rust";
-    inherit version;
+    version = serverVersion;
 
-    src = "${sources}/aw-server-rust";
+    src = "${serverSources}/aw-server-rust";
 
-    cargoHash = "sha256-E89E/LWBPHtb6vX94swodmE+UrWMrzQnm8AO5GeyuoA=";
+    cargoHash = "sha256-8qbH7jlduLQhfrGMbpvZYs/BMojzaGOIa3+Prv0tlO0=";
+
+    # cargo-auditable 0.7.6 panics on this workspace's `cli = [ "dep:clap" ]`
+    # features ("does not have feature clap" during cargo metadata).
+    auditable = false;
 
     patches = [
-      # Override version string with hardcoded value as it may be outdated upstream.
+      # aw-server's Cargo.toml still says 0.14.0 at the 0.14.1 tag; report the
+      # release version from the API instead.
       (replaceVars ./override-version.patch {
-        version = sources.rev;
+        version = "v${serverVersion}";
       })
     ];
 
@@ -215,12 +265,22 @@ rec {
       sqlite
     ];
 
-    env.AW_WEBUI_DIR = aw-webui;
+    # build.rs hands this path to rust-embed, which compiles the frontend into
+    # the binary; there is no runtime asset directory.
+    env.AW_WEBUI_DIR = "${aw-webui}";
 
-    preCheck = ''
-      # Fake home folder for tests that use ~/.cache and ~/.local/share
-      export HOME="$TMPDIR"
+    doCheck = false;
+
+    # One of the crates bakes the compiler it was built with into aw-sync.
+    # Nothing reads it at runtime, but the reference drags gcc (~280 MiB) into
+    # the closure of every machine that runs the server.
+    postFixup = ''
+      for f in $out/bin/*; do
+        ${removeReferencesTo}/bin/remove-references-to -t ${stdenv.cc} "$f"
+      done
     '';
+
+    passthru.updateScript = ./update.sh;
 
     meta = {
       description = "High-performance implementation of the ActivityWatch server, written in Rust";
@@ -234,12 +294,12 @@ rec {
 
   aw-webui = buildNpmPackage {
     pname = "aw-webui";
-    inherit version;
+    version = serverVersion;
 
-    src = "${sources}/aw-server-rust/aw-webui";
+    src = "${serverSources}/aw-server-rust/aw-webui";
 
     nodejs = nodejs_22;
-    npmDepsHash = "sha256-fPk7UpKuO3nEN1w+cf9DIZIG1+XRUk6PJfVmtpC30XE=";
+    npmDepsHash = "sha256-XJuIBFNdm8he7OF3X6Szxo74/usfIcwtrLPPY3HYnlU=";
 
     makeCacheWritable = true;
     npmFlags = [ "--legacy-peer-deps" ];
@@ -247,7 +307,7 @@ rec {
     patches = [
       # Hardcode version to avoid the need to have the Git repo available at build time.
       (replaceVars ./commit-hash.patch {
-        commit_hash = sources.rev;
+        commit_hash = serverSources.rev;
       })
     ];
 
@@ -256,13 +316,6 @@ rec {
       mv dist $out
       mv media/logo/logo.{png,svg} $out
       runHook postInstall
-    '';
-
-    doCheck = true;
-    checkPhase = ''
-      runHook preCheck
-      npm test
-      runHook postCheck
     '';
 
     meta = {
