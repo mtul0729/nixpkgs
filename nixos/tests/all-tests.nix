@@ -1697,6 +1697,7 @@ in
   simple-container = runTest ./simple-container.nix;
   simple-vm = runTest ./simple-vm.nix;
   sing-box = runTest ./sing-box.nix;
+  siyuan = runTest ./siyuan.nix;
   sks = runTest ./sks.nix;
   slimserver = runTest ./slimserver.nix;
   slipshow = runTest ./slipshow.nix;
