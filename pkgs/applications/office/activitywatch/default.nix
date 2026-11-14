@@ -33,12 +33,12 @@ let
     fetchSubmodules = true;
   };
 
-  serverVersion = "0.14.3";
+  serverVersion = "0.14.2";
   serverSources = fetchFromGitHub {
     owner = "ActivityWatch";
     repo = "activitywatch";
     rev = "v${serverVersion}";
-    sha256 = "sha256-WKtEVS6FFPppF61rpkBQE/9UhOZslwLlzkDpdr/gJDI=";
+    sha256 = "sha256-lAE9pTC9tGB0mIuYOPcsWyv66aOov/5uA8QblvmlrOw=";
     fetchSubmodules = true;
   };
 in
