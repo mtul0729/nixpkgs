@@ -31,6 +31,44 @@ produce a second set of derivations for identical versions and miss every cache 
 `nixpkgs-ci/branches.txt` is the single source of truth for which branches carry
 packages. Adding a branch means editing that file; CI reads nothing else.
 
+## Model
+
+Six objects, five invariants. The workflows implement the invariants; when a step looks
+odd, find out which one it serves before changing it.
+
+| object | written by | meaning |
+| --- | --- | --- |
+| `nixos-unstable` | upstream | the baseline every derivation is evaluated against |
+| `pkg/<name>` | humans + `update` | a claim: this package, built on the baseline |
+| candidate | one `update` leg | that branch rebased onto this run's `nixos-unstable`, carrying one update unit; invisible until it builds |
+| update unit | `update` | every attribute one `nix-update` actually changed; built, committed and pushed as one |
+| `integration` | `integrate` only | unstable with every branch squashed in; the published set of derivations |
+| a consumer's `flake.lock` | the consumer | a build handle: one rev, therefore one closure |
+
+1. **A branch tip is built.** A commit reachable on a `pkg/*` branch has had its whole
+   unit built on the baseline it was verified against. No commit exists that only
+   `integrate` has ever compiled.
+2. **A unit is decided by evaluation.** Attributes that share a definition are grouped by
+   what the evaluator reports changed — `drvPath` or `version` — never by directory or
+   `updateScript` path. `siyuan` and `siyuan-preview` share both and still rotate
+   different channels, so the path would merge packages that must stay apart.
+3. **The cache is keyed by derivation.** Version numbers are not keys. A version, a hash,
+   a dependency or the baseline commit all produce a new entry. That is why the baseline
+   is `nixos-unstable` and not `master`, and why a rebuild after `integrate` is a cache
+   miss rather than a mistake.
+4. **`integration` is generated.** No human pushes it. Its fixed shape — upstream plus
+   one squashed commit per branch — leaves every derivation outside the branches
+   identical to upstream, so `cache.nixos.org` still applies to the rest of the system.
+5. **A pin names a green `integration` rev.** Moving `flake.lock` is a deployment
+   decision, not something to follow as soon as a commit lands: a rev whose `integrate`
+   run is still building has only part of its cache.
+
+Violating invariant 1 is what made `just switch` compile `magpie` locally on 2026-11-15:
+`magpie` and `magpie-cli` read the same `version` line, so upgrading them one attribute
+at a time built 4251 and then rewrote it to 4252; the tip carried a `magpie` that had
+never been built, and only `integrate` compiled it. Invariant 2 is why the fix is a
+derivation comparison and not a directory scan.
+
 ## Branches
 
 | branch | written by | contents |
