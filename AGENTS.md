@@ -62,6 +62,10 @@ The same rule covers **how a package is built**, not only how it is structured:
   when a rebase conflict is an upstream bump of the same package: upstream changed only
   `version`/`hash`/`rev`/`tag`-style lines, the branch tip is newer, and the resulting
   candidate builds. Every other baseline conflict is a human decision.
+- **`integration` is published only after its build.** The branch is what consumers pin,
+  so the push stays behind the `nix-build` step: a rev whose cache is still being filled
+  sends every consumer into local compilation. When the build fails the branch simply
+  stays at the last rev that built; the next hourly cycle tries again.
 - Personal files belong in `nixpkgs-ci/`. Do not touch upstream's `ci/` directory.
 - Every upstream workflow is already `disabled_manually`. Do not re-enable any of them;
   `nixpkgs-ci` is the only one meant to run.
