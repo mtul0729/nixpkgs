@@ -16,19 +16,24 @@ if [ -z "$current_version" ]; then
   exit 1
 fi
 
-# Prefer the Releases API, but fall back to the tag list when it is rate
-# limited (403), as happens on CI without a token.
+# `releases/latest` is the maintainer's own statement of what is stable:
+# GitHub excludes prereleases from it. A tag listing cannot answer that
+# question -- ActivityWatch tags prereleases with a plain
+# `v<major>.<minor>.<patch>` and marks them only in the release object -- so
+# falling back to tags flipped this branch between 0.14.3 and 0.14.2 every
+# hour, whenever the unauthenticated API call hit the rate limit. Use the
+# token CI exports; when the API still cannot answer, keep the current
+# version and try again next round.
+curl_args=(--fail --silent --show-error)
+if [ -n "${GH_TOKEN:-}" ]; then
+  curl_args+=(-H "Authorization: Bearer ${GH_TOKEN}")
+fi
 latest_tag=
-if ! latest_tag=$(curl --fail --silent --show-error \
+if ! latest_tag=$(curl "${curl_args[@]}" \
   "https://api.github.com/repos/${owner}/${repo}/releases/latest" |
   jq --raw-output '.tag_name'); then
-  latest_tag=$(
-    git ls-remote --tags --refs "https://github.com/${owner}/${repo}" |
-      awk -F/ '{ print $3 }' |
-      grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
-      sort --version-sort |
-      tail -n 1
-  )
+  echo "activitywatch: Releases API unavailable, keeping ${current_version}" >&2
+  exit 0
 fi
 latest_version=${latest_tag#v}
 
@@ -39,6 +44,14 @@ fi
 
 if [ "$latest_version" = "$current_version" ]; then
   echo "activitywatch is already at ${current_version}"
+  exit 0
+fi
+
+# Upgrades only move forward. If upstream retracts a release, the version to
+# go back to is a human decision, not something an hourly job should infer.
+if [ "$(printf '%s\n%s\n' "$current_version" "$latest_version" |
+  sort --version-sort | tail -n 1)" = "$current_version" ]; then
+  echo "activitywatch: releases/latest is ${latest_version}, behind ${current_version}; not downgrading" >&2
   exit 0
 fi
 
