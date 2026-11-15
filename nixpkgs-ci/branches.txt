@@ -9,6 +9,10 @@
 # 更新 bot 靠改动的文件路径找候选包，路径里没有 by-name 的包只能在这里显式声明。
 # 显式列表是**补充**，不是替代：by-name 里的包照常按目录名自动识别，这里只补
 # by-name 看不见的（例如 all-packages.nix 里同源的另一个属性）。
+#
+# 列出来的属性同时也是升级单元的候选：一次 nix-update 改到的所有属性会整组构建、
+# 一个提交推上去。所以 magpie-cli 这种和 magpie 共用 version 的 override 必须写
+# 在这里，否则 bot 只会构建 magpie，分支 tip 上的 magpie-cli 从没编过。
 pkg/dashbeam
 pkg/magpie: magpie-cli
 # 只新增 helix-master；不要改 pkgs.helix / helix-unwrapped。nixpkgs 的 steelix

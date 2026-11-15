@@ -5,6 +5,11 @@
 #   → IFD 检查 → 构建 → 提交并推送
 # 所以分支上不会出现没验证过的提交，也不需要长期维护的候选分支或回滚。
 #
+# 一个分支上的属性不一定是独立的包定义：magpie-cli 是 magpie 的
+# `withGui = false` override，siyuan-server 读 siyuan 的 stable pin。一次
+# nix-update 改到的所有属性是一个单元：只跑一次升级、整组构建、一个提交，
+# 分支 tip 上不会留下只有一部分构建过的派生。
+#
 # 候选只在包里确实有新内容时才会推送：单纯有新 upstream 基线不会移动 pkg/
 # 分支。pkg/ 分支的基线是更新时的构建输入，不是需要每小时同步的发布状态。
 #
@@ -459,14 +464,51 @@ jobs:
           updatable=$(jq -c .updatable <<< "$eval_json")
           echo "updatable: $updatable"
 
+          # 一个分支上的属性不一定各自独立：magpie-cli 是 magpie 在
+          # all-packages.nix 里的 `withGui = false` override，两者读同一行
+          # version。按属性逐个升级会让先升级的那个已经构建过的候选作废 ——
+          # 后一个属性改写共享字段，分支 tip 上就留下一个从没构建过的派生，
+          # 只有 integrate 才会第一次编它。所以一次升级要把实际改到的所有
+          # 属性当成一个单元：只跑一次 nix-update，构建整组，推一个提交。
+          #
+          # 单元的判据是求值结果，不是目录或 updateScript 路径：nix-update
+          # 跑完后，任何 drvPath 或 version 变了的属性都是被它改到的。
+          # pkg/magpie 的 magpie-cli 与 magpie 一起变；pkg/siyuan 的
+          # siyuan/siyuan-server 共用 stable 通道的 pin 一起变，而
+          # siyuan-preview 走 preview 通道、版本独立，因此不会被并进来 ——
+          # 只看 updateScript 路径会把 siyuan 和 siyuan-preview 错并成一组。
+          drv_snapshot() {
+            nix-instantiate --eval --json --strict \
+              --option allow-import-from-derivation false --expr "
+                let
+                  pkgs = import ./. { };
+                  names = builtins.fromJSON ''$names'';
+                  field = n: f:
+                    let r = builtins.tryEval (f pkgs.\${n});
+                    in if r.success then r.value else null;
+                in builtins.listToAttrs (map (n: {
+                  name = n;
+                  value = {
+                    drv = field n (p: p.drvPath);
+                    version = field n (p: p.version);
+                  };
+                }) names)"
+          }
+
           lease_tip=$old_tip
+          declare -A handled=()
           for pkg in $(jq -r '.[]' <<< "$updatable"); do
+            if [ -n "${handled[$pkg]:-}" ]; then
+              echo "$pkg: 与前面升级过的属性共用一份定义，已经一起构建"
+              continue
+            fi
             old=$(jq -r --arg pkg "$pkg" '.versions[$pkg] // empty' <<< "$eval_json")
             if [ -z "$old" ]; then
               echo "::error::$BRANCH: $pkg 的 version 无法求值"
               exit 1
             fi
             before=$(git rev-parse HEAD)
+            before_drvs=$(drv_snapshot)
             # nix-update 抓 releases.atom 只请求一次 —— 源码里没有重试，一个 502
             # 就直接抛出来，整条腿失败并开 issue。网络抖动是常态，重试比事后收拾
             # 一条挂死的 issue 便宜得多。只重试这一步：后面的 verify 是确定性
@@ -506,20 +548,53 @@ jobs:
                 "\`$pkg\` 仍是 $old：这一轮 \`nix-update\` 跑通了、没有可推的版本，上一次是抓 feed 时的网络抖动。"
               continue
             fi
-            new=$(nix-instantiate --eval --raw -A "$pkg.version")
-            # nix-update can update one package on a branch that carries several.
-            # Another package succeeding is not a human decision to retry this one.
-            # Key on the version and package definition, not the whole branch or a
-            # shared data file that a sibling's update may also rewrite.
-            position=$(jq -r --arg pkg "$pkg" '.positions[$pkg] // ""' <<< "$eval_json")
-            pkg_scope=()
-            if [ -n "$position" ]; then
-              pkg_scope+=("$(dirname "${position%:*}")")
+            # 这次 nix-update 实际改到了哪些属性：drv 或 version 和升级前不同
+            # 的那些，加上发起升级的 pkg 自己（哪怕只是格式变化，也要构建后
+            # 才能推）。
+            after_drvs=$(drv_snapshot)
+            group=()
+            for m in $(jq -r '.[]' <<< "$updatable"); do
+              b_drv=$(jq -r --arg m "$m" '.[$m].drv // ""' <<< "$before_drvs")
+              a_drv=$(jq -r --arg m "$m" '.[$m].drv // ""' <<< "$after_drvs")
+              b_ver=$(jq -r --arg m "$m" '.[$m].version // ""' <<< "$before_drvs")
+              a_ver=$(jq -r --arg m "$m" '.[$m].version // ""' <<< "$after_drvs")
+              if [ "$m" = "$pkg" ] || [ "$a_drv" != "$b_drv" ] || [ "$a_ver" != "$b_ver" ]; then
+                group+=("$m")
+              fi
+            done
+            new=$(jq -r --arg pkg "$pkg" '.[$pkg].version // empty' <<< "$after_drvs")
+            if [ -z "$new" ]; then
+              echo "::error::$BRANCH: $pkg 升级后 version 求不出来"
+              exit 1
             fi
+            others=()
+            for m in "${group[@]}"; do
+              [ "$m" = "$pkg" ] || others+=("$m")
+              # 这一轮不再单独升级同组的属性：它们已经跟着这次改动一起更新，
+              # 再跑一次 nix-update 只会重写同一份定义。
+              handled[$m]=1
+            done
+            # 失败标记按整组取 scope：一个单元就是一个候选。
+            pkg_scope=()
+            for m in "${group[@]}"; do
+              position=$(jq -r --arg pkg "$m" '.positions[$pkg] // ""' <<< "$eval_json")
+              if [ -n "$position" ]; then
+                pkg_scope+=("$(dirname "${position%:*}")")
+              fi
+            done
             git add -A pkgs
             content=$(
               {
-                printf 'version=%s\n' "$new"
+                # 单属性单元沿用原来的摘要（version=...），已有的 ci-failed
+                # 标记不会因为这次改动失效；多属性单元才按属性逐行列出。
+                if [ ${#group[@]} -eq 1 ]; then
+                  printf 'version=%s\n' "$new"
+                else
+                  for m in "${group[@]}"; do
+                    printf '%s=%s\n' "$m" \
+                      "$(jq -r --arg m "$m" '.[$m].version // ""' <<< "$after_drvs")"
+                  done
+                fi
                 if [ ${#pkg_scope[@]} -gt 0 ]; then
                   git diff --cached --binary "origin/$UPSTREAM_BRANCH" -- "${pkg_scope[@]}"
                 fi
@@ -528,15 +603,24 @@ jobs:
             tag="ci-failed/$BRANCH/$pkg/$content"
             # 这个候选已经试过并失败，不再自动重试。hash 不包含 upstream 基线
             # 或同分支其他包的历史改动：单纯 rebase、别的包更新都不会绕过人工闸门。
-            if git ls-remote --exit-code "$FORK_URL" "refs/tags/$tag" >/dev/null 2>&1; then
-              echo "::warning::$pkg $new 上次构建失败过（$tag），跳过"
+            # 同组的标记也要查：失败的单元可能记在组里另一个属性名下。
+            seen_tag=""
+            for m in "${group[@]}"; do
+              t="ci-failed/$BRANCH/$m/$content"
+              if git ls-remote --exit-code "$FORK_URL" "refs/tags/$t" >/dev/null 2>&1; then
+                seen_tag="$t"
+                break
+              fi
+            done
+            if [ -n "$seen_tag" ]; then
+              echo "::warning::$pkg $new 上次构建失败过（$seen_tag），跳过"
               # 不通知：这是 backoff 的预期行为，annotation 已经写进 run 摘要，
               # 该候选对应的失败 issue 本来就开着；每轮通知等于每小时一条。
               git reset -q --hard "$before"
               continue
             fi
             build_log="$RUNNER_TEMP/build-$pkg.log"
-            if ! verify "$pkg" 2>&1 | tee "$build_log"; then
+            if ! verify "${group[@]}" 2>&1 | tee "$build_log"; then
               # 环境失败不是候选的属性：换一台 runner 就可能过。打成 ci-failed
               # 会把这个版本永久钉住，只能等人删 tag；这种只跳过这一轮。
               if grep -qi 'No space left on device' "$build_log"; then
@@ -550,27 +634,44 @@ jobs:
               fi
               echo "::warning::$BRANCH: $pkg $new 构建失败，标记后跳过"
               notify "$BRANCH: $pkg $new 构建失败" \
-                "\`$pkg\` $old -> $new 没有构建过，已经标成 \`$tag\`：同样的内容不会重试第二次。"$'\n\n'"构建输出在这一轮的日志里。要在同一个版本上再来一次，先删掉 \`$tag\`。" \
+                "\`$pkg\` $old -> $new 没有构建过${others:+（同组还要构建 \`${others[*]}\`）}，已经标成 \`$tag\`：同样的内容不会重试第二次。"$'\n\n'"构建输出在这一轮的日志里。要在同一个版本上再来一次，先删掉 \`$tag\`。" \
                 "$BRANCH: $pkg"
               git tag -f "$tag" "refs/remotes/fork/$BRANCH"
               git push -f "$FORK_URL" "refs/tags/$tag" || true
               git reset -q --hard "$before"
               continue
             fi
-            git commit -q -m "$pkg: $old -> $new"
+            if [ ${#others[@]} -eq 0 ]; then
+              git commit -q -m "$pkg: $old -> $new"
+            else
+              {
+                printf '%s\n\n' "$pkg: $old -> $new"
+                printf 'nix-update also changed %s: they read the same package definition,\nso the branch tip has to be built as one unit.\n\n' "${others[*]}"
+                for m in "${others[@]}"; do
+                  printf 'co-updated: %s %s -> %s\n' "$m" \
+                    "$(jq -r --arg m "$m" '.[$m].version // ""' <<< "$before_drvs")" \
+                    "$(jq -r --arg m "$m" '.[$m].version // ""' <<< "$after_drvs")"
+                done
+              } | git commit -q -F -
+            fi
             if git push --force-with-lease="refs/heads/$BRANCH:$lease_tip" \
               "$FORK_URL" "HEAD:refs/heads/$BRANCH"; then
               echo "pushed $pkg: $old -> $new"
               lease_tip=$(git rev-parse HEAD)
-              close_issues "$pkg" "\`$pkg\` 已经推到 $new。"
-              # 只清理这个包已经解决的失败标记，别抹掉同分支其他包的人工闸门。
-              for t in $(git ls-remote --tags "$FORK_URL" "refs/tags/ci-failed/$BRANCH/$pkg/*" \
-                | awk '{print $2}' | sed 's|^refs/tags/||'); do
-                git push "$FORK_URL" --delete "refs/tags/$t" || true
+              for m in "${group[@]}"; do
+                m_new=$(jq -r --arg m "$m" '.[$m].version // empty' <<< "$after_drvs")
+                close_issues "$m" "\`$m\` 已经推到 ${m_new:-$new}。"
+              done
+              # 只清理这个单元已经解决的失败标记，别抹掉同分支其他包的人工闸门。
+              for m in "${group[@]}"; do
+                for t in $(git ls-remote --tags "$FORK_URL" "refs/tags/ci-failed/$BRANCH/$m/*" \
+                  | awk '{print $2}' | sed 's|^refs/tags/||'); do
+                  git push "$FORK_URL" --delete "refs/tags/$t" || true
+                done
               done
             else
               echo "::warning::$BRANCH: 推送失败（分支刚被改过），这次跳过"
-              notify "$BRANCH: $pkg 推送被拒" "\`$pkg\` $old -> $new 验过了，但推不上去：\`$BRANCH\` 刚被改过（多半是人推的）。改动已回滚，下一轮重来。" \
+              notify "$BRANCH: $pkg 推送被拒" "\`$pkg\` $old -> $new 验过了${others:+（同组还有 \`${others[*]}\`）}，但推不上去：\`$BRANCH\` 刚被改过（多半是人推的）。改动已回滚，下一轮重来。" \
                 "$BRANCH: $pkg"
               git reset -q --hard "$before"
             fi
