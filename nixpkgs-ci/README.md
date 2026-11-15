@@ -87,10 +87,21 @@ a commit that has not been built:
    attempts because a failed run may already have rewritten `package.nix`. Only this step
    is retried — the build below is deterministic, and retrying it would burn CI time and
    hide a real failure;
-3. `nix-instantiate --option allow-import-from-derivation false -A <pkg>.drvPath`, the same
-   IFD check `pkgs/README.md` asks for;
-4. `nix-build -A <pkg>` inside `cachix watch-exec mtul`, so the result lands in the cache;
-5. only then `git commit` and a force-with-lease push of the candidate.
+3. re-evaluate every attribute the branch carries and treat the ones whose `drvPath`
+   changed, plus the one that was updated, as a single unit. Two names can read the same
+   definition: `magpie-cli` is `magpie.override { withGui = false; }`, and
+   `siyuan-server` inherits the stable channel pin that `siyuan`'s update script writes.
+   Updating such names one at a time leaves the tip unbuilt — the first leg built a
+   version that the next `nix-update` then rewrote, and only `integrate` compiled the
+   result. The grouping cannot come from the package directory or the `updateScript`
+   path: `siyuan` and `siyuan-preview` share both yet rotate different channels, so the
+   derivation is what decides;
+4. `nix-instantiate --option allow-import-from-derivation false -A <pkg>.drvPath` for
+   every attribute in the unit, the same IFD check `pkgs/README.md` asks for;
+5. one `nix-build -A <a> -A <b>` for the whole unit inside `cachix watch-exec mtul`, so
+   every result lands in the cache;
+6. only then `git commit` (one commit per unit) and a force-with-lease push of the
+   candidate.
 
 The queue is per branch, not per workflow. One leg can run for well over an hour -- a
 new version of a large Rust package has to be compiled from source on the runner, and no
@@ -150,14 +161,18 @@ Upstream's unreleased `nix-update` reverses the preference; revisit this rule wh
 pin moves.
 
 If the build fails, nothing is committed. The leg pushes a
-`ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the package version and its
-definition directory's effective diff from upstream, not the baseline tree or another
-package's changes. A later `nixos-unstable` commit or an update to a sibling package
-therefore does not bypass the tag, even when they share a data file. The same candidate is
-never retried automatically: deleting the tag, changing the package, or choosing a
-different baseline is a human decision. A new version or a package definition edit changes
-the hash and forms a new candidate. A successful update deletes only that package's failure
-tags.
+`ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the unit's versions and the
+union of their definition directories' effective diffs from upstream, not the baseline
+tree or another package's changes. A unit that is a single attribute digests
+`version=<v>` exactly as before, so the format change did not invalidate existing tags; a
+multi-attribute unit lists one `name=version` line per attribute. A later
+`nixos-unstable` commit or an update to a sibling package therefore does not bypass the
+tag, even when they share a data file. The same candidate is never retried
+automatically: deleting the tag, changing the package, or choosing a different baseline
+is a human decision. A new version or a package definition edit changes the hash and
+forms a new candidate. A successful update deletes only that unit's failure tags, and the
+tag lookup covers every attribute in the unit so a failure recorded under a sibling's
+name is not retried either.
 
 `-f only=pkg/helix` limits a run to those branches. `-f verify_only=true` still creates
 and rebases the candidate, but skips `nix-update` and only runs the two checks: that is
