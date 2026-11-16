@@ -12,7 +12,7 @@ rustPlatform.buildRustPackage (
   let
     # Tracking helix master; update.sh bumps this via
     # `nix-update helix-master.unwrapped --version=branch=master`.
-    rev = "3480821125c2ce804ead0e81ab112c4a7cbbf4f2";
+    rev = "49986e6674e5658164a88f599ec8c822e62ad0db";
 
     defaultRuntimeDir = runCommand "helix-master-default-runtime" { } ''
       cp -r --no-preserve=mode ${finalAttrs.src}/runtime $out
@@ -30,7 +30,7 @@ rustPlatform.buildRustPackage (
       owner = "helix-editor";
       repo = "helix";
       inherit rev;
-      hash = "sha256-y0FJ/aIpLewMhwxxWXOjU3yKcEIGD7IWzBO5569b4io=";
+      hash = "sha256-kS7i/4f9CnHqOiJ8filFPnFvvrKJILiBjfbBE8R4gZc=";
     };
 
     cargoHash = "sha256-l/tREiX6YCpQNTrBXi4bk3HxcmacNX2Ung/7SNIXeXM=";
