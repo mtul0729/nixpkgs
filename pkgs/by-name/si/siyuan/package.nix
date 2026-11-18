@@ -233,6 +233,12 @@ stdenv.mkDerivation (finalAttrs: {
       "sqlcipher"
     ];
 
+    # `go build ./...` also produces `apigen` (a 34 MiB code-generation tool)
+    # and `harmony` (a 145 MiB HarmonyOS bundle). Neither is used by the
+    # desktop app or the server, but they were installed in $out/bin and every
+    # closure that symlinks the kernel carried them.
+    subPackages = [ "." ];
+
     env.CGO_ENABLED = "1";
 
     # Tests are skipped here because many upstream tests make assumptions that
@@ -425,7 +431,10 @@ stdenv.mkDerivation (finalAttrs: {
           cp -a ${serverUi}/lib/siyuan/. $out/lib/siyuan/
           chmod -R u+w $out/lib/siyuan
           ln -s ${finalAttrs.kernel}/bin/kernel $out/bin/siyuan-kernel
-          ln -s ${finalAttrs.src}/app/pandoc/pandoc-resources $out/lib/siyuan/pandoc-resources
+          # Copy the 24 KiB resource directory. Symlinking into the source
+          # would register the whole 343 MiB source tree as a runtime
+          # dependency.
+          cp -a ${finalAttrs.src}/app/pandoc/pandoc-resources $out/lib/siyuan/pandoc-resources
           runHook postInstall
         '';
 
