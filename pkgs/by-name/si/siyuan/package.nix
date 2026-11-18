@@ -49,6 +49,12 @@ let
     "aarch64-linux"
   ];
 
+  # SiYuan's OCR only ever uses onnxruntime's default CPU execution provider
+  # (kernel/ocr/runtime.c never appends another one), but nixpkgs enables the
+  # OpenVINO provider on Linux by default. That drags OpenVINO, oneTBB and
+  # level-zero (~200 MiB) into both packages' closures for nothing.
+  onnxruntimeMinimal = onnxruntime.override { openvinoSupport = false; };
+
   # Per-channel pins. The stable channel lives in ./channels.json next to this
   # file; pkgs/by-name/si/siyuan-preview/package.nix selects the other one with
   # `siyuan.override { channel = "preview"; }`. update.sh rewrites this file.
@@ -135,7 +141,7 @@ let
   dedupeOnnxruntime = resourcesDir: ''
     ocrRuntimeDir=${resourcesDir}/stage/ocr/runtime/${ocrTarget}
     mkdir -p "$ocrRuntimeDir"
-    ortLib=${lib.getLib onnxruntime}/lib/libonnxruntime.${if isDarwin then "dylib" else "so"}
+    ortLib=${lib.getLib onnxruntimeMinimal}/lib/libonnxruntime.${if isDarwin then "dylib" else "so"}
     test -e "$ortLib" || {
       echo "onnxruntime library missing: $ortLib"
       exit 1
@@ -182,7 +188,7 @@ let
       # The server serves the runtime library from the same relative path the
       # client uses after installation.
       ortName="libonnxruntime.${if isDarwin then "dylib" else "so"}"
-      ortLib=${lib.getLib onnxruntime}/lib/$ortName
+      ortLib=${lib.getLib onnxruntimeMinimal}/lib/$ortName
       test -e "$ortLib" || {
         echo "onnxruntime library missing: $ortLib"
         exit 1
