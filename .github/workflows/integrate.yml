@@ -37,7 +37,9 @@ jobs:
     # 推，重放它只会把上一次 integration 再发一遍。
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # codex 缓存一失效就要重编 90 分钟以上，旧的 120 分钟只够勉强容下
+    # 拉取、合并和发布，中途再有一次慢步骤就整轮作废。留到 180。
+    timeout-minutes: 180
     steps:
       # 只要 nixpkgs-ci/ 目录，不用把 fork 的整个 nixpkgs 历史拖下来。
       - uses: actions/checkout@v5
