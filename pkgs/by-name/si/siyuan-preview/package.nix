@@ -1,4 +1,4 @@
-# Upstream's pre-release channel: the highest of stable/beta/alpha, so it is
+# Upstream's pre-release channel: the highest of stable/rc/beta/alpha, so it is
 # sometimes the same version as `siyuan` right after a stable release. Kept in
 # this fork only — the upstream PR carries the stable channel alone.
 #
