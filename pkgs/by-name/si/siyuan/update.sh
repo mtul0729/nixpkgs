@@ -37,22 +37,23 @@ write_pin() {
 
 current="$(read_pin version)"
 
-# Upstream tags alphas and betas; the stable channel only takes plain versions,
-# the preview channel takes the highest of stable/beta/alpha. Cheap enough to run
-# first, so an unchanged package costs one ls-remote instead of a full rotation.
+# Upstream tags alphas, betas and release candidates; the stable channel only
+# takes plain versions, the preview channel takes the highest of
+# stable/rc/beta/alpha. Cheap enough to run first, so an unchanged package costs
+# one ls-remote instead of a full rotation.
 tags="$(git ls-remote --tags --refs https://github.com/siyuan-note/siyuan 'v*' \
   | sed 's#.*refs/tags/v##')"
 
 if [ "$channel" = stable ]; then
   latest="$(printf '%s\n' "$tags" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
 else
-  # Sort key X.Y.Z.R.N, R = 0 for alpha, 1 for beta, 2 for a plain release, so
-  # that v3.9.1-alpha.1 > v3.9.0 and v3.9.0-beta.2 < v3.9.0.
+  # Sort key X.Y.Z.R.N, R = 0 for alpha, 1 for beta, 2 for rc, 3 for a plain
+  # release, so that v3.9.1-alpha.1 > v3.9.0 and v3.9.0-rc.2 < v3.9.0.
   latest="$(printf '%s\n' "$tags" \
-    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)\.[0-9]+)?$' \
-    | awk -F- '{ if (NF == 1) printf "%s.2.0 %s\n", $1, $0;
-                 else { split($2, p, "."); r = (p[1] == "alpha") ? 0 : 1;
-                        printf "%s.%d.%s %s\n", $1, r, p[2], $0 } }' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$' \
+    | awk -F- 'BEGIN { rank["alpha"] = 0; rank["beta"] = 1; rank["rc"] = 2 }
+               { if (NF == 1) printf "%s.3.0 %s\n", $1, $0;
+                 else { split($2, p, "."); printf "%s.%d.%s %s\n", $1, rank[p[1]], p[2], $0 } }' \
     | sort -V | tail -1 | cut -d' ' -f2)"
 fi
 
