@@ -17,6 +17,7 @@
   copyDesktopItems,
   xdg-utils,
   zip,
+  jq,
   python3,
   go_1_26,
   onnxruntime,
@@ -33,7 +34,8 @@ let
   pnpm = pnpm_11;
 
   # Upstream's app/package.json pins Electron 44; nixpkgs' default electron (43)
-  # is known to break pasting, so follow upstream's major version.
+  # is known to break pasting, so follow upstream's major version. postConfigure
+  # fails the build if upstream's declared major drifts from this pin.
   electron = electron_44;
 
   platformIds = {
@@ -258,6 +260,7 @@ stdenv.mkDerivation (finalAttrs: {
     nodejs
     pnpmConfigHook
     pnpm
+    jq
     # The webpack bundle lands in app/stage/build, which is gitignored upstream
     # and absent from the tarball, so every platform has to run the build —
     # otherwise the output ships without any JS bundle. nixpkgs limited this to
@@ -297,6 +300,24 @@ stdenv.mkDerivation (finalAttrs: {
   env.ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
 
   postConfigure = ''
+    # app/package.json pins the Electron major upstream tests against. Electron
+    # removes APIs across majors and a mismatched major can still build, so make
+    # drift fail the build instead of surfacing at runtime.
+    expectedElectronMajor="$(
+      jq -r '.devDependencies.electron // empty | capture("(?<major>[0-9]+)").major' package.json
+    )"
+    actualElectronMajor="${lib.versions.major electron.version}"
+
+    if [ -z "$expectedElectronMajor" ]; then
+      echo "ERROR: app/package.json no longer declares devDependencies.electron" >&2
+      exit 1
+    fi
+
+    if [ "$expectedElectronMajor" != "$actualElectronMajor" ]; then
+      echo "ERROR: siyuan expects Electron $expectedElectronMajor, nixpkgs provides ${electron.version} (major $actualElectronMajor)" >&2
+      exit 1
+    fi
+
     # Do not consume upstream's prebuilt pandoc archives: drop them and build a
     # placeholder zip under the name electron-builder's extraResources expects.
     # Nothing unaudited is unpacked or chmod +x'ed, and installPhase replaces
