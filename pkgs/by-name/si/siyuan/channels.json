@@ -7,8 +7,8 @@
     "ocrAssets": "ocr-assets.json"
   },
   "preview": {
-    "version": "3.8.11-beta.3",
-    "src": "sha256-UL/5Q9Cedkjb/ovZ69rCbFcy25Ol0BguIhpEeauKBSw=",
+    "version": "3.8.11-rc.3",
+    "src": "sha256-ZBlb2Gx9mSmkCU8Ep4oEUwOMf++HKuWO6CujAHmaFYY=",
     "vendorHash": "sha256-+EvqDvOvMo+juLgOl5WpTLEZqCGhleQU3GTspiCO+Yc=",
     "pnpmDeps": "sha256-mWGtSnh2WxKzOiXvr1Wy53lQfzYbhTxqfEkQux8e48w=",
     "ocrAssets": "ocr-assets-preview.json"
