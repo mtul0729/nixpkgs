@@ -242,7 +242,8 @@ they have to be able to answer questions about the change.
 
 - `git branch -D pr/<pkg>-<ver>` and delete the remote branch if GitHub left it behind.
 - Backport only if the human wants the change in a release.
-- `branches.txt`: leave it alone. Dropping the line afterwards is a human decision.
+- `branches.toml`: leave it alone. Dropping the `[[branch]]` table afterwards is a human
+  decision.
 - A green run does not prove substitutability — compare the store path's `.narinfo` on
   `mtul.cachix.org`.
 
@@ -264,9 +265,9 @@ When the question is whether to adopt a change someone else proposed, not whethe
   ```
 
   It builds the by-name packages the branch changes relative to its merge base, or whatever
-  `-f attrs=...` names, and pushes the result to `mtul.cachix.org`. `branches.txt` is for branches
-  CI maintains; an evaluation branch does not belong there, not even for an hour. Locally,
-  substitute what CI built (`--max-jobs 0`); AGENTS.md, *Local environment*.
+  `-f attrs=...` names, and pushes the result to `mtul.cachix.org`. `branches.toml` is for
+  branches CI maintains; an evaluation branch does not belong there, not even for an hour.
+  Locally, substitute what CI built (`--max-jobs 0`); AGENTS.md, *Local environment*.
 - **Measure the effect the PR claims.** If it says two bars become one, the evidence is a screenshot
   with one bar. Reading the diff tells you what the code intends, not what the window looks like —
   and the gap between those two is the whole point of evaluating it.
@@ -281,5 +282,6 @@ When the question is whether to adopt a change someone else proposed, not whethe
   exactly like a dead input path. Resolve the window's output, and convert from the window
   screenshot's own scale rather than the output's, before concluding that input does not work. If
   interaction was not exercised, say so.
-- **Clean up when the decision is made.** Branch, `branches.txt` line, worktree, build output. Keep
-  `notes/<pkg>-<pr>.md` only when a future reader would otherwise have to repeat the evaluation.
+- **Clean up when the decision is made.** Branch, `branches.toml` table, worktree, build output.
+  Keep `notes/<pkg>-<pr>.md` only when a future reader would otherwise have to repeat the
+  evaluation.

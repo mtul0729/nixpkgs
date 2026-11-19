@@ -1,4 +1,4 @@
-# 把 branches.txt 里的分支合成 integration 并发布。
+# 把 branches.toml 里的分支合成 integration 并发布。
 #
 # integration = NixOS/nixpkgs 的 nixos-unstable ＋ 每个分支的有效 diff 各压成一个
 # 提交。sysadmin 引 github:mtul0729/nixpkgs/integration，所以这一步是唯一的发布动作。
@@ -121,25 +121,22 @@ jobs:
           git config user.name "myul"
           git config user.email "hdx0729@gmail.com"
 
-          # One branch per line. A line may also name the packages the branch
-          # carries: `pkg/activitywatch: aw-server-rust`. A package outside
-          # pkgs/by-name cannot be found by diffing file paths, so a branch
-          # that carries one declares it here.
-          LIST="$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt"
+          # One [[branch]] table per branch. Top-level `attrs` and every
+          # `[[branch.unit]]`'s attrs name packages the branch carries; a
+          # package outside pkgs/by-name cannot be found by diffing file paths,
+          # so a branch that carries one declares it here.
+          LIST="$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.toml"
           declare -A EXPLICIT=()
           BRANCHES=()
-          while IFS= read -r line; do
-            case "$line" in
-              ''|'#'*) continue ;;
-            esac
-            b="${line%%:*}"
-            b="$(printf '%s' "$b" | sed 's/[[:space:]]*$//')"
+          python3 "$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.py" tsv \
+            --file "$LIST" > "$RUNNER_TEMP/branches.tsv"
+          while IFS=$'\t' read -r b attrs; do
             [ -n "$b" ] || continue
             BRANCHES+=("$b")
-            case "$line" in
-              *:*) EXPLICIT["$b"]="$(printf '%s' "${line#*:}" | tr ',' ' ')" ;;
-            esac
-          done < <(grep -v '^[[:space:]]*#' "$LIST" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -n "$attrs" ]; then
+              EXPLICIT["$b"]="$(printf '%s' "$attrs" | tr ',' ' ')"
+            fi
+          done < "$RUNNER_TEMP/branches.tsv"
           if [ ${#BRANCHES[@]} -eq 0 ]; then
             echo "::error::$LIST 里一个分支都没有；是文件丢了还是格式不对？"
             exit 1
@@ -210,7 +207,7 @@ jobs:
           # 合进来的分支各自声明了哪些属性。两部分取并：by-name 目录名（目录名即属性名，
           # 对 by-name 包是准的），加上显式列表 —— 后者补的是 by-name 看不见的包，
           # 例如定义在 all-packages.nix 里的另一个属性。**不是替代**：写过一次
-          # `branch: foo` 就把 by-name 的包挤掉，等于默默少建一个。
+          # `attrs = ["foo"]` 就把 by-name 的包挤掉，等于默默少建一个。
           : > "$RUNNER_TEMP/attrs.txt"
           for b in "${merged[@]}"; do
             base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$b")

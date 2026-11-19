@@ -1,6 +1,6 @@
 # 按参数构建任意分支：评估别人的 PR、试一个补丁、验证一次 rebase。
 #
-# branches.txt 是「长期由 CI 维护的分支」清单。临时评估不该往里塞一行再删掉：
+# branches.toml 是「长期由 CI 维护的分支」清单。临时评估不该往里塞一行再删掉：
 # 那一小时里 update 和 integrate 都会把它当成常规分支跑，删掉又会让 integrate
 # 的缓存失去意义。这个 workflow 只手动触发，分支名是参数，产物同样进 mtul 缓存。
 #

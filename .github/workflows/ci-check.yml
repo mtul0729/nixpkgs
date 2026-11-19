@@ -1,4 +1,4 @@
-# master 上的便宜检查：workflow 的 YAML 能不能解析、branches.txt 格式对不对、
+# master 上的便宜检查：workflow 的 YAML 能不能解析、branches.toml 格式对不对、
 # 列出的分支在 fork 上是否真的存在。integrate 取不到分支会硬失败，所以在推
 # master 时先拦下来，比跑一整条流水线便宜得多。
 name: ci-check
@@ -45,42 +45,19 @@ jobs:
               print('ok', path)
           PY
 
-      - name: Validate branches.txt
+      - name: Validate branches.toml
         run: |
           set -euo pipefail
-          while IFS= read -r line; do
-            name="${line%%:*}"
-            name="$(printf '%s' "$name" | sed 's/[[:space:]]*$//')"
-            if [ -z "$name" ]; then
-              echo "::error::branches.txt 里有一行没有分支名"
-              exit 1
-            fi
-            # 显式包列表是手写的：update 只按逗号切分，integrate 把逗号换成空格
-            # 再切。逗号周围的空格两边都容忍，包名内部的空格 update 会当成一个
-            # 属性名。这里拦下这种形状错误；名字是否存在由 update 求值时报。
-            case "$line" in
-              *:*)
-                list="$(printf '%s' "${line#*:}" \
-                  | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-                if [ -n "$list" ]; then
-                  IFS=',' read -ra attrs <<< "$list"
-                  for attr in "${attrs[@]}"; do
-                    attr="$(printf '%s' "$attr" \
-                      | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-                    case "$attr" in
-                      ''|*[!A-Za-z0-9_+-]*)
-                        echo "::error::$name 的包名 '$attr' 不是合法的属性名；多个包用逗号隔开"
-                        exit 1 ;;
-                    esac
-                  done
-                fi
-                ;;
-            esac
+          # 结构由 branches.py 校验；属性名是否存在由 update 求值时报，分支是否
+          # 存在从下面开始查。
+          python3 nixpkgs-ci/branches.py validate \
+            --file nixpkgs-ci/branches.toml \
+            --out "$RUNNER_TEMP/branch-names.txt"
+          while IFS= read -r name; do
             if ! git ls-remote --exit-code "https://github.com/$FORK" \
               "refs/heads/$name" >/dev/null; then
               echo "::error::$name 在 fork 上不存在；integrate 会取不到它"
               exit 1
             fi
             echo "ok $name"
-          done < <(grep -v '^[[:space:]]*#' nixpkgs-ci/branches.txt \
-            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+          done < "$RUNNER_TEMP/branch-names.txt"
