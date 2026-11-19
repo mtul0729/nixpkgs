@@ -23,6 +23,12 @@
 # 这次构建失败、推送被拒）都在 fork 上开一个 update-failed 的 issue，同一个标题只开
 # 一次、摘要没变就不重复评论；候选推上去、或者下一轮证明那次失败只是抖动之后自动关掉。
 #
+# 检查频率写在 branches.toml 的更新单元上（[[branch.unit]]，默认 1h）。一个单元就是
+# 一次 nix-update 连同它改写到的所有属性；整组共用一个间隔，也整组跳过，不会把共用
+# 一份定义的属性拆成两条腿。它只跳过 nix-update：rebase、求值和基线冲突的自动消解
+# 仍然每小时做，integration 依赖分支跟上当前 unstable。手动 workflow_dispatch 忽略
+# 频率。
+#
 # 升级这一步会重试：nix-update 抓 release feed 只请求一次，一个 502 就能把腿打掉。
 # 网络抖动在重试里消化掉，issue 留给重试也救不回来的失败。
 #
@@ -41,7 +47,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: "只处理这些分支（逗号分隔）；留空 = branches.txt 里的全部"
+        description: "只处理这些分支（逗号分隔）；留空 = branches.toml 里的全部"
         type: string
       verify_only:
         description: "不升级，只验证选中的分支（配合 only 使用）"
@@ -78,19 +84,11 @@ jobs:
           ONLY: ${{ inputs.only }}
         run: |
           set -euo pipefail
-          # branches.txt 是唯一来源；ONLY 只是从里面挑几个跑。
-          all=$(grep -v '^[[:space:]]*#' "$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt" \
-            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
-            | grep -v '^$' \
-            | sed 's/:.*//' \
-            | jq -R . | jq -sc .)
-          if [ -n "${ONLY:-}" ]; then
-            want=$(printf '%s' "$ONLY" | tr ',' '\n' \
-              | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | jq -R . | jq -sc .)
-            names=$(jq -c --argjson want "$want" '[.[] | select(. as $b | $want | index($b))]' <<< "$all")
-          else
-            names="$all"
-          fi
+          # branches.toml 是唯一来源；ONLY 只是从里面挑几个跑。数组顺序就是
+          # 分支顺序，所以用 branches.py 读 TOML，不再用 grep/sed 猜格式。
+          names=$(python3 "$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.py" plan \
+            --file "$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.toml" \
+            --only "${ONLY:-}")
           echo "branches=$names" >> "$GITHUB_OUTPUT"
           echo "count=$(jq length <<< "$names")" >> "$GITHUB_OUTPUT"
           jq -r '.[]' <<< "$names"
@@ -178,6 +176,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ matrix.branch }}
           VERIFY_ONLY: ${{ inputs.verify_only }}
+          # 计划任务是唯一受更新单元间隔约束的入口：手动触发就是人要求
+          # 现在检查一次（verify_only 也走这条路）。
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
           set -euo pipefail
           # 大包从零编译要一个多小时，死在链接阶段时日志里只有 runner 的 shutdown，
@@ -197,10 +198,10 @@ jobs:
           resmon=$!
           trap 'kill "$resmon" 2>/dev/null || true' EXIT
 
-          LIST="$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.txt"
-          line=$(grep -E "^${BRANCH}(:|$)" "$LIST" | head -1 || true)
-          if [ -z "$line" ]; then
-            echo "::error::$BRANCH 不在 branches.txt 里"
+          LIST="$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.toml"
+          if ! cfg=$(python3 "$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.py" show \
+            --file "$LIST" "$BRANCH"); then
+            echo "::error::$BRANCH 不在 branches.toml 里，或文件无法解析"
             exit 1
           fi
 
@@ -218,20 +219,19 @@ jobs:
           old_tip=$(git rev-parse "refs/remotes/fork/$BRANCH")
 
           # The by-name packages the branch adds or modifies since it left
-          # upstream, plus the ones a line names (`branch: pkg1 pkg2`). The
-          # names are a supplement -- a package outside by-name, such as a
-          # second attribute in all-packages.nix, which the path diff cannot
-          # see -- not a replacement for the diff. The merge base, never the
-          # upstream tip: a topic branch does not follow upstream, and a
-          # two-point diff would count every upstream change since its base.
+          # upstream, plus the ones its [[branch]] table names in `attrs` or in
+          # a [[branch.unit]]. The names are a supplement -- a package outside
+          # by-name, such as a second attribute in all-packages.nix, which the
+          # path diff cannot see -- not a replacement for the diff. The merge
+          # base, never the upstream tip: a topic branch does not follow
+          # upstream, and a two-point diff would count every upstream change
+          # since its base.
           base=$(git merge-base "origin/$UPSTREAM_BRANCH" "refs/remotes/fork/$BRANCH")
           mapfile -t RAW < <(
             git diff --name-only --diff-filter=AM "$base" "refs/remotes/fork/$BRANCH" \
               -- 'pkgs/by-name/*/*/package.nix' \
               | awk -F/ '{print $4}'
-            case "$line" in
-              *:*) printf '%s' "${line#*:}" | tr ',' '\n' ;;
-            esac
+            jq -r '.attrs[], (.units[] | .attrs[])' <<< "$cfg"
           )
           mapfile -t NEW < <(
             printf '%s\n' "${RAW[@]}" \
@@ -241,6 +241,27 @@ jobs:
             echo "$BRANCH: no packages"
             exit 0
           fi
+
+          # 检查频率属于更新单元：一个 [[branch.unit]] 是一次 nix-update 连同它
+          # 改写到的所有属性，整组共用一个间隔。branches.py 同时算出这一刻哪些
+          # 单元到了槽位；整条腿用同一次判断，避免跑过整点时前后不一致。
+          if ! due_out=$(python3 "$GITHUB_WORKSPACE/fork/nixpkgs-ci/branches.py" due \
+            --file "$LIST" "$BRANCH"); then
+            echo "::error::$BRANCH: branches.toml 的更新单元无法求值"
+            exit 1
+          fi
+          declare -A UNIT_EVERY=() UNIT_DUE=() UNIT_ATTRS=() ATTR_UNIT=()
+          while IFS=$'\t' read -r _index _every _due _attrs; do
+            [ -n "$_index" ] || continue
+            UNIT_EVERY["$_index"]="$_every"
+            UNIT_DUE["$_index"]="$_due"
+            UNIT_ATTRS["$_index"]="$_attrs"
+            IFS=, read -ra _members <<< "$_attrs"
+            for _member in "${_members[@]}"; do
+              ATTR_UNIT["$_member"]="$_index"
+            done
+          done <<< "$due_out"
+          declare -A SKIPPED_UNIT=()
 
           FORK_URL="https://x-access-token:$TOKEN@github.com/$FORK.git"
           RUN_URL="$GITHUB_SERVER_URL/$FORK/actions/runs/$GITHUB_RUN_ID"
@@ -435,7 +456,7 @@ jobs:
           names=$(printf '%s\n' "${NEW[@]}" | jq -R . | jq -sc .)
           # A package opts into automatic updates by declaring an updateScript.
           # The same evaluation reports names that do not exist at all: tryEval
-          # would otherwise drop a typo from branches.txt silently, and the first
+          # would otherwise drop a typo from branches.toml silently, and the first
           # complaint would be integrate's "attribute not found" an hour later.
           eval_json=$(nix-instantiate --eval --json --strict --expr "
             let
@@ -459,7 +480,7 @@ jobs:
             }")
           missing=$(jq -c .missing <<< "$eval_json")
           if [ "$missing" != "[]" ]; then
-            echo "::error::$BRANCH: branches.txt 声明的属性不存在：$missing"
+            echo "::error::$BRANCH: branches.toml 声明的属性不存在：$missing"
             exit 1
           fi
           updatable=$(jq -c .updatable <<< "$eval_json")
@@ -478,6 +499,8 @@ jobs:
           # siyuan/siyuan-server 共用 stable 通道的 pin 一起变，而
           # siyuan-preview 走 preview 通道、版本独立，因此不会被并进来 ——
           # 只看 updateScript 路径会把 siyuan 和 siyuan-preview 错并成一组。
+          # branches.toml 的 [[branch.unit]] 就是把这个求值出来的组写成调度
+          # 单位；没写进任何单元的属性各自是一个 1h 单元。
           drv_snapshot() {
             nix-instantiate --eval --json --strict \
               --option allow-import-from-derivation false --expr "
@@ -501,6 +524,19 @@ jobs:
           for pkg in $(jq -r '.[]' <<< "$updatable"); do
             if [ -n "${handled[$pkg]:-}" ]; then
               echo "$pkg: 与前面升级过的属性共用一份定义，已经一起构建"
+              continue
+            fi
+            # 节流以单元为单位：单元没到槽位，它的每个成员都跳过。成员在
+            # branches.toml 里只属于一个单元（branches.py validate 保证），所以
+            # 这里不会把共用定义的属性拆开。by-name 发现、没有写进单元的属性
+            # 保持 1h，随时可查。
+            unit="${ATTR_UNIT[$pkg]:-}"
+            if [ "$SCHEDULED" = "true" ] && [ -n "$unit" ] \
+              && [ "${UNIT_DUE[$unit]:-true}" = "false" ]; then
+              if [ -z "${SKIPPED_UNIT[$unit]:-}" ]; then
+                SKIPPED_UNIT["$unit"]=1
+                echo "更新单元 ${UNIT_ATTRS[$unit]} 未到检查时间（每 ${UNIT_EVERY[$unit]}，现在 $(date -u '+%H:%M UTC')）"
+              fi
               continue
             fi
             old=$(jq -r --arg pkg "$pkg" '.versions[$pkg] // empty' <<< "$eval_json")

@@ -130,7 +130,7 @@ git commit -m "<what and why>"
 git push origin HEAD:master
 ```
 
-`master` exists to carry the CI workflow, `branches.txt` and this documentation. Nothing
+`master` exists to carry the CI workflow, `branches.toml` and this documentation. Nothing
 consumes its commits: `integration` is built from `nixos-unstable` plus the topic
 branches, and those branches do not descend from `master`.
 
@@ -209,8 +209,9 @@ Read both before starting.
    nix-instantiate --eval --strict --raw -A <pkg>.cargoDeps.vendorStaging.outputHash  # Rust
    ```
 
-4. Add the branch to `nixpkgs-ci/branches.txt` on `master` **only after it exists on the
-   fork** — `integrate` fetches every listed branch and fails hard if one is missing.
+4. Add the branch to `nixpkgs-ci/branches.toml` on `master` **only after it exists on the
+   fork** — `integrate` fetches every listed branch and fails hard if one is missing. Use
+   `[[branch.unit]]` when several attributes are rewritten by one `nix-update`.
 5. Push the branch, then `gh workflow run update.yml -R mtul0729/nixpkgs -f only=<branch>`.
 
 Push without touching the remote configuration:
@@ -260,12 +261,13 @@ a script can find it is a red flag for a reviewer and for future you.
 
 Order of preference:
 
-1. **Declare the attribute.** A `branches.txt` line may name its packages, e.g.
-   `pkg/activitywatch: aw-server-rust`. Several are comma-separated (`pkg/x: a,b`), not
-   space-separated — the workflow splits on commas. List every attribute the branch owns:
-   discovery otherwise only sees `pkgs/by-name/*/*/package.nix` paths that the diff touches,
-   so a branch whose update writes only a sibling file (`channels.json`) names its packages
-   here. That is all a package outside `pkgs/by-name/` needs in order to be seen.
+1. **Declare the attribute.** A `[[branch]]` table may name its packages in `attrs`, e.g.
+   `attrs = ["aw-server-rust"]`; a `[[branch.unit]]` names the attributes one `nix-update`
+   rewrites together. List every attribute the branch owns: discovery otherwise only sees
+   `pkgs/by-name/*/*/package.nix` paths that the diff touches, so a branch whose update
+   writes only a sibling file (`channels.json`) names its packages here. That is all a
+   package outside `pkgs/by-name/` needs in order to be seen. A unit also carries the
+   check interval (default `1h`); it never skips the hourly rebase or build.
 2. **Write an update script.** `passthru.updateScript = ./update.sh` is the documented
    mechanism for "the default heuristics cannot edit this correctly" (see
    `pkgs/README.md`, *Automatic package updates*). A shared `sources` fetch with a
@@ -335,9 +337,10 @@ gh run view <id> -R mtul0729/nixpkgs --log --job=<job id>
 ```
 
 In `update` look for `branches: ...`, `updatable: [...]`, and `<pkg>: already at
-<version>` or `pushed <pkg>: <old> -> <new>`; a leg that built and pushed is the only
-thing that moves a branch. `already at` does not push a refreshed baseline unless a
-baseline conflict was auto-resolved; that candidate is built and pushed and logs
+<version>`, `更新单元 ... 未到检查时间`, or `pushed <pkg>: <old> -> <new>`; a leg that
+built and pushed is the only thing that moves a branch. `already at` does not push a
+refreshed baseline unless a baseline conflict was auto-resolved; that candidate is
+built and pushed and logs
 `<branch>: 基线冲突已自动消解，构建后推送`. Hundreds of entries in `updatable` mean the
 branch-base rule above was violated — stop and fix the branch.
 `ci-failed/<branch>/<pkg>/<content-hash>` tags are the backoff record. The hash covers the

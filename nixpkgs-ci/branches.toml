@@ -1,0 +1,80 @@
+# 我维护的包，一个分支一组。CI 把这里的分支依次 rebase 到 NixOS/nixpkgs 的
+# nixos-unstable 上，拼成 integration 分支 —— sysadmin 引的就是它，所以这里列出的每个
+# 分支都会进到系统里那份 nixpkgs。
+#
+# 一个 [[branch]] 表就是一个分支。数组顺序有意义，后面的分支可以依赖前面的。
+# name 是分支名。
+#
+# attrs（可选）补的是 by-name 的路径 diff 看不见的属性，例如 all-packages.nix 里
+# 的同源属性。它是**补充**，不是替代：by-name 里的包照常按目录名自动识别。
+# attrs 里的每个属性各自是一个更新单元，默认每 1h 检查一次。
+#
+# [[branch.unit]]（可选）把一次 nix-update 会一起改到的属性写成一个更新单元：
+# 整组共用一个检查间隔，也整组跳过。attrs 必须非空，interval 可省略（默认 1h）。
+# 一个属性只能出现在一个地方：既写进 attrs 又写进 unit，或者两个 unit 都写，
+# 都会让调度有歧义，branches.py validate 会直接报错。
+#
+# 共用一份定义的属性（siyuan/siyuan-server、magpie/magpie-cli、
+# aw-server-rust/aw-client-rust）必须写进同一个 unit。只节流其中一个没有意义：
+# nix-update 会连同另一个一起改写。
+#
+# interval 取值：1h 2h 3h 4h 6h 8h 12h daily weekly
+# daily = 每天 00:13 UTC，weekly = 每周日 00:13 UTC。它只控制 nix-update 这一步；
+# 每小时 rebase 基线、求值和自动消解基线冲突照常进行，integration 依赖它们。
+# 手动 workflow_dispatch 忽略频率，永远检查一次。
+# 单个属性要单独节流就写成只有一个成员的 unit；attrs 只是 1h 的简写。
+#
+# 例：
+#   [[branch]]
+#   name = "pkg/siyuan"
+#   attrs = ["siyuan-preview"]
+#
+#   [[branch.unit]]
+#   attrs = ["siyuan", "siyuan-server"]
+#   interval = "6h"
+
+[[branch]]
+name = "pkg/dashbeam"
+
+# magpie-cli 是 magpie 在 all-packages.nix 里的 `withGui = false` override，
+# 两者读同一行 version，所以是一个更新单元。
+[[branch]]
+name = "pkg/magpie"
+
+[[branch.unit]]
+attrs = ["magpie", "magpie-cli"]
+interval = "3h"
+
+# 只新增 helix-master；不要改 pkgs.helix / helix-unwrapped。nixpkgs 的 steelix
+# 复用 helix.defaultGrammarsOverlay 和 helix-unwrapped，改这两个属性会让 steelix
+# 的缓存失效。
+[[branch]]
+name = "pkg/helix"
+
+[[branch]]
+name = "pkg/activitywatch"
+
+# 两者都从同一个 aw-server-rust 工作区构建，版本一起变。
+[[branch.unit]]
+attrs = ["aw-server-rust", "aw-client-rust"]
+
+[[branch]]
+name = "pkg/fcitx5-vinput"
+
+[[branch]]
+name = "pkg/siyuan"
+attrs = ["siyuan-preview"]
+
+# siyuan-server 继承 siyuan 写的 stable 通道 pin，两者一起变；
+# siyuan-preview 走 preview 通道，版本独立。
+[[branch.unit]]
+attrs = ["siyuan", "siyuan-server"]
+
+[[branch]]
+name = "pkg/disktree"
+
+[[branch]]
+name = "pkg/helix-fcitx-focus"
+
+[[branch]]
+name = "pkg/codex"

@@ -29,8 +29,11 @@ systems consuming this fork run unstable, so `integration` sits on the same
 commit the official binary cache was built against; basing it on `master` would
 produce a second set of derivations for identical versions and miss every cache entry.
 
-`nixpkgs-ci/branches.txt` is the single source of truth for which branches carry
-packages. Adding a branch means editing that file; CI reads nothing else.
+`nixpkgs-ci/branches.toml` is the single source of truth for which branches carry
+packages. Adding a branch means editing that file; CI reads nothing else. TOML is
+read by [`branches.py`](branches.py), which `ci-check`, `update` and `integrate`
+all call, so the format has one definition instead of one `grep`/`sed` pipeline
+per consumer.
 
 ## Model
 
@@ -75,7 +78,7 @@ derivation comparison and not a directory scan.
 
 | branch | written by | contents |
 | --- | --- | --- |
-| `master` | humans and CI | the workflow, this document, `AGENTS.md` and `branches.txt` — no package code. CI rewrites this single commit onto the current `nixos-unstable` every hour |
+| `master` | humans and CI | the workflow, this document, `AGENTS.md` and `branches.toml` — no package code. CI rewrites this single commit onto the current `nixos-unstable` every hour |
 | `integration` | CI only | generated: `nixos-unstable` with every branch below squashed into one commit each; advances only after its attributes build. Never edit or push it by hand; consumers pin `github:mtul0729/nixpkgs/integration` |
 | `pkg/magpie` | humans + update bot | Go/Wails model switcher, tracked by `vX.Y.Z` release tags. Also drops upstream's throw-alias for the removed package of the same name |
 | `pkg/dashbeam` | humans + update bot | Tauri 2 + pnpm file transfer tool |
@@ -103,10 +106,10 @@ Four workflows, each with one job:
 
 | workflow | trigger | what it does |
 | --- | --- | --- |
-| `ci-check` | push to `master` touching `nixpkgs-ci/**` or `.github/workflows/**` | parses every workflow's YAML, checks `branches.txt` syntax, and checks that each branch exists on the fork |
+| `ci-check` | push to `master` touching `nixpkgs-ci/**` or `.github/workflows/**` | parses every workflow's YAML, validates `branches.toml`, and checks that each branch exists on the fork |
 | `update` | hourly at `:13`, manual (`only`, `verify_only`) | per branch: `nix-update`, IFD check, build, and only then push the branch |
 | `integrate` | after `update` finishes, manual | squash every branch onto current `nixos-unstable`, build the attributes the branches carry, then push `integration` |
-| `build-branch` | manual (`branch`, `attrs`, `push_to_cache`) | build one branch's attributes without listing it in `branches.txt` — for evaluating a PR or trying a patch |
+| `build-branch` | manual (`branch`, `attrs`, `push_to_cache`) | build one branch's attributes without listing it in `branches.toml` — for evaluating a PR or trying a patch |
 
 A docs-only push to `master` costs `ci-check` (~15 s) and nothing else.
 
@@ -142,6 +145,54 @@ a commit that has not been built:
    every result lands in the cache;
 6. only then `git commit` (one commit per unit) and a force-with-lease push of the
    candidate.
+
+#### Update frequency
+
+Updates are scheduled per **update unit**: the attributes one `nix-update` run
+rewrites together. A top-level `attrs` entry is a unit of its own; a
+`[[branch.unit]]` table groups the attributes that share a definition and gives
+the whole group one interval:
+
+```toml
+[[branch]]
+name = "pkg/siyuan"
+attrs = ["siyuan-preview"]
+
+[[branch.unit]]
+attrs = ["siyuan", "siyuan-server"]
+interval = "6h"
+```
+
+`interval` defaults to `1h`, so a unit without one behaves like the hourly run.
+The other accepted values are `2h`, `3h`, `4h`, `6h`, `8h`, `12h`, `daily`
+(00:13 UTC) and `weekly` (Sunday 00:13 UTC). Slots are fixed on the UTC clock,
+not measured from the previous check: `6h` means 00:13, 06:13, 12:13 and 18:13,
+and a run delayed into a different UTC hour is evaluated as that hour. A single
+attribute on its own cadence is a one-member `[[branch.unit]]`; top-level `attrs`
+is only the shorthand for the hourly default.
+
+The unit is the scheduling boundary, not the attribute. `siyuan` and
+`siyuan-server` read the same stable-channel pin, and `magpie`/`magpie-cli` read
+the same `version`; both pairs are one `[[branch.unit]]` in `branches.toml`.
+`siyuan-preview` rotates a different channel, so it stays a separate hourly unit
+in `attrs`. A `[[branch.unit]]` must list every attribute the update rewrites,
+including ones by-name discovery would find anyway: an attribute that appears in
+no unit is its own hourly unit, and throttling one half of a pair would let the
+hourly half drag the other along. `branches.py validate` rejects an attribute
+that appears twice, because two intervals for one definition have no meaning.
+
+The gate applies only to `nix-update`. The rebase onto the current `nixos-unstable`, the
+evaluation and the automatic baseline-conflict resolution still happen every hour,
+because `integrate` merges the branches and a branch that stopped following its
+baseline would be skipped there. A skipped or failed slot is retried at the next one,
+not on the next hourly run, so `daily` can leave a package a day behind -- which is the
+point of setting it.
+
+An interval bounds when an update is *started*, not what a unit contains. If an hourly
+unit's `nix-update` rewrites an attribute in a throttled unit, that attribute is still
+built and published with the group, exactly as the derivation-based grouping requires.
+`workflow_dispatch` ignores the schedule, so a manual run always checks every selected
+attribute; `verify_only` is therefore unaffected.
 
 The queue is per branch, not per workflow. One leg can run for well over an hour -- a
 new version of a large Rust package has to be compiled from source on the runner, and no
@@ -250,9 +301,10 @@ transient failure that never becomes an issue leaves nothing to close later.
 ### integrate
 
 `integrate` squashes each branch's effective diff from its merge base into one generated
-commit on the current `nixos-unstable`, in `branches.txt` order, runs `nix-build` for the
-attributes those branches declare (`branches.txt`'s explicit list first, otherwise the
-by-name directory names), and pushes `integration` only after every one of them built.
+commit on the current `nixos-unstable`, in `branches.toml` order, runs `nix-build` for
+the attributes those branches declare (top-level `attrs` plus every `[[branch.unit]]`'s
+`attrs`, in addition to the by-name directory names), and pushes `integration` only
+after every one of them built.
 
 The source branches keep their full history. `integration` is a generated, force-pushed
 artifact, so replaying every update commit there provides no consumer value: `pkg/magpie`
@@ -302,7 +354,10 @@ published.
    nix-instantiate --eval --strict --raw -A <pkg>.cargoDeps.vendorStaging.outputHash
    ```
 
-5. Add the branch name to `nixpkgs-ci/branches.txt` on `master`.
+5. Add a `[[branch]]` table with the branch name to `nixpkgs-ci/branches.toml` on
+   `master`; add `attrs` only for attributes by-name discovery cannot see. If several
+   attributes share one definition, list them together in a `[[branch.unit]]` so they
+   are updated and scheduled as one group.
 6. `gh workflow run update.yml -R mtul0729/nixpkgs -f only=<branch>`, then confirm the
    package was built (the leg's log) and landed in the cache (see below).
 
