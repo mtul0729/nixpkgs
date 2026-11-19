@@ -400,6 +400,10 @@ stdenv.mkDerivation (finalAttrs: {
     comment = "Refactor your thinking";
     icon = "siyuan";
     exec = "siyuan %U";
+    # Upstream declares this association in electron-builder; passing a Markdown
+    # path opens the standalone editor instead of the workspace. Without the
+    # MimeType the file manager never offers SiYuan for .md files.
+    mimeTypes = [ "text/markdown" ];
     categories = [ "Utility" ];
   });
 
