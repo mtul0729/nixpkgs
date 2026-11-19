@@ -15,15 +15,6 @@ let
   lanSyncTable = "siyuan_lan_sync";
   lanSyncSet = "services";
   lanSyncMark = "0x40000000";
-  fixedPortFlagSupported =
-    cfg.package.passthru.fixedPortFlagSupported or (
-      lib.versionAtLeast cfg.package.version "3.8.10"
-      || (
-        lib.versionOlder cfg.package.version "3.8.10"
-        && lib.versionAtLeast cfg.package.version "3.8.10-alpha.3"
-      )
-    );
-
   args = [
     (lib.getExe' cfg.package "siyuan-kernel")
     "serve"
@@ -37,8 +28,8 @@ let
     (toString cfg.port)
     "--mode"
     "prod"
-  ]
-  ++ lib.optionals fixedPortFlagSupported [
+    # A system service must not reserve the desktop client's 6806
+    # compatibility port.
     "--fixed-port=false"
   ]
   ++ lib.optionals (cfg.accessAuthCode != "") [
@@ -319,12 +310,6 @@ in
 
       environment = {
         HOME = workspaceDir;
-      }
-      // lib.optionalAttrs (!fixedPortFlagSupported) {
-        # A system service must not reserve the desktop client's 6806
-        # compatibility port. Older kernels need the environment variable
-        # understood by the package's patch.
-        SIYUAN_DISABLE_FIXED_PORT = "1";
       };
 
       preStart = ''

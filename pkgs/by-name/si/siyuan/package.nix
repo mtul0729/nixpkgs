@@ -63,16 +63,6 @@ let
   channels = lib.importJSON ./channels.json;
   channelData = channels.${channel} or (throw "siyuan: unknown channel '${channel}'");
 
-  # The native --fixed-port flag landed in 3.8.10-alpha.3. Check the stable
-  # release separately because lib.versionAtLeast treats 3.8.10 as older than
-  # its pre-releases.
-  fixedPortFlagSupported =
-    lib.versionAtLeast channelData.version "3.8.10"
-    || (
-      lib.versionOlder channelData.version "3.8.10"
-      && lib.versionAtLeast channelData.version "3.8.10-alpha.3"
-    );
-
   # The name electron-builder's extraResources expects for the current platform.
   # The archive we build is a placeholder: afterPack only checks that bin/pandoc
   # is a non-empty regular file, and the kernel uses the Nix pandoc directly via
@@ -226,10 +216,7 @@ stdenv.mkDerivation (finalAttrs: {
       (replaceVars ./set-pandoc-path.patch {
         pandoc_path = lib.getExe pandoc;
       })
-    ]
-    # Older kernels need the environment variable patch that the NixOS
-    # module sets.
-    ++ lib.optional (!fixedPortFlagSupported) ./disable-fixed-port.patch;
+    ];
 
     # Set flags and tags as per upstream's Dockerfile
     ldflags = [
@@ -474,7 +461,6 @@ stdenv.mkDerivation (finalAttrs: {
           inherit (finalAttrs) kernel pnpmDeps;
           ui = serverUi;
           updateScript = ./update.sh;
-          inherit fixedPortFlagSupported;
         };
 
         meta = finalAttrs.meta // {
@@ -488,7 +474,6 @@ stdenv.mkDerivation (finalAttrs: {
       kernel = finalAttrs.kernel;
       inherit server;
       ui = serverUi;
-      inherit fixedPortFlagSupported;
 
       # Updates the version, the hashes and ocr-assets.json; see update.sh.
       updateScript = ./update.sh;
