@@ -12,7 +12,7 @@ rustPlatform.buildRustPackage (
   let
     # Tracking helix master; update.sh bumps this via
     # `nix-update helix-master.unwrapped --version=branch=master`.
-    rev = "9de242bfac2aac9dfd0e4496eb25190e85c24e69";
+    rev = "1a3fdfda6dfdda4567af6093a6249bb2bb422fc6";
 
     defaultRuntimeDir = runCommand "helix-master-default-runtime" { } ''
       cp -r --no-preserve=mode ${finalAttrs.src}/runtime $out
@@ -24,16 +24,16 @@ rustPlatform.buildRustPackage (
     # nixpkgs convention (pkgs/README.md): packages tracking an upstream
     # commit use <latest upstream release>-unstable-<commit date>, as a
     # literal maintained by nix-update (--version=branch=master).
-    version = "25.07.1-unstable-2026-11-19";
+    version = "25.07.1-unstable-2026-11-20";
 
     src = fetchFromGitHub {
       owner = "helix-editor";
       repo = "helix";
       inherit rev;
-      hash = "sha256-86dO1RCW5GwD7P1zzZm+XgTE1V+942wbXr4q8QATb98=";
+      hash = "sha256-tiNf7Wy1KbrIUSDaXjOcxnpIN4zg9eQyXMC6gIEV0n4=";
     };
 
-    cargoHash = "sha256-l/tREiX6YCpQNTrBXi4bk3HxcmacNX2Ung/7SNIXeXM=";
+    cargoHash = "sha256-DJ8q+PBauPqHwPHgCGqMnfFQ5ZjLtnJzNZQTkpIQ/JU=";
 
     doCheck = false;
 
