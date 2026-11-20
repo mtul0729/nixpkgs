@@ -36,10 +36,15 @@
   zstd,
   installShellCompletions ? stdenv.buildPlatform.canExecute stdenv.hostPlatform,
   _experimental-update-script-combinators,
+  withVoice ? false,
 }:
 let
-  supportsVoice =
+  voiceSupported =
     stdenv.hostPlatform.isDarwin || (stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isGnu);
+  # The voice sidecar needs a device backend and a fixed GStreamer/Opus runtime,
+  # which is a large part of the closure and adds ~84 crates to the build. The
+  # fork builds without it; `.override { withVoice = true; }` restores it.
+  supportsVoice = withVoice && voiceSupported;
   voiceRuntimeRoots = [
     (lib.getLib gst_all_1.gstreamer)
     (lib.getLib gst_all_1.gst-plugins-base)
@@ -165,6 +170,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     gitMinimal
     installShellFiles
     pkg-config
+  ]
+  ++ lib.optionals stdenv.hostPlatform.isLinux [
+    # `-fuse-ld=lld` resolves `ld.lld` on PATH.
+    (lib.getBin lld)
   ];
 
   buildInputs = [
@@ -214,6 +223,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
     # Link with lld on Darwin. nixpkgs' classic open-source ld64 fails to insert
     # ARM64 branch thunks for this binary, producing `b(l) ARM64 branch out of range`.
     NIX_CFLAGS_LINK = "-fuse-ld=${lib.getExe' lld "ld64.lld"}";
+  }
+  // lib.optionalAttrs stdenv.hostPlatform.isLinux {
+    # bfd's peak memory exceeds the 16 GB RAM + 16 GB swap of the CI runner
+    # during this binary's link; lld links it with far less.
+    NIX_CFLAGS_LINK = "-fuse-ld=lld";
   };
 
   # NOTE: part of the test suite requires access to networking, local shells,
