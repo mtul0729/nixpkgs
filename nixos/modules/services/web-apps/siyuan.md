@@ -119,10 +119,11 @@ equivalent. This matches the official container deployment, whose compose
 examples use `restart: unless-stopped`; systemd never restarts a unit after
 `systemctl stop`, so the two policies line up.
 
-Starting the kernel also copies `appearance/` into the workspace after the HTTP
-server is already listening, so the first requests can still 404. An
-`ExecStartPost` waits for those assets, which means `systemctl start` returns
-only once the UI is servable.
+The kernel copies `appearance/` into the workspace before it starts the HTTP
+server, so a client that can connect already gets the UI assets. Kernels older
+than 3.8.10-alpha.5 listened first and served 404s until the copy finished; the
+packaged kernel is always newer than that, so the module does not add a startup
+wait.
 
 ## Network proxy {#module-services-siyuan-network-proxy}
 
