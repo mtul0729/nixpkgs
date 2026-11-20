@@ -247,6 +247,12 @@ reclaimed VM never reaches. The branches are throwaway evidence, deleted with
 `git push origin :refs/heads/ci-probe/<branch>/<run-id>` once the question is answered;
 `ci-probe/*` triggers no workflow.
 
+Each push is bounded by a ten-second timeout. A connection that is blackholed must not
+block the sampler: the manual run's last successful push was 47 minutes before the VM
+disappeared while the build was still running, which is the shape of a stuck `git push`,
+not of a dead sampler. Samples keep accumulating locally while pushes fail and go out in
+one batch when the network returns.
+
 Read it as a fork, not as a graph. Samples that stop while memory is flat mean the VM was
 reclaimed, and no package change will help. Memory pinned near the limit with `rustc` or
 `ld.lld` on top means the build really is the cause. A `systemd-oomd` kill explains why
