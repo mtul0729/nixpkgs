@@ -251,6 +251,11 @@ into a fake `vX -> vX` update and recomputes the source and dependency hashes.
 Upstream's unreleased `nix-update` reverses the preference; revisit this rule when the CI
 pin moves.
 
+A custom update script that rewrites a commit-ish field (`rev`, or a `buildCommit` the
+`src` refers to) must do so **before** it calls `nix-update`: `nix-update` recomputes the
+hash from `<pkg>.src` as it evaluates in the checkout, so a commit written afterwards
+leaves the hash describing the previous source.
+
 If the build fails, nothing is committed. The leg pushes a
 `ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the unit's versions and the
 union of their definition directories' effective diffs from upstream, not the baseline

@@ -230,6 +230,9 @@ git push --force-with-lease=refs/heads/<branch>:<old sha> \
 - A fast path is allowed and wanted: compare the pinned rev with `git ls-remote` and exit
   before the expensive part. helix does this; without it every hourly run paid for
   prefetching every grammar only to report `already at`.
+- A script that rewrites a commit-ish field (`rev`, or a `buildCommit` that `src` follows)
+  must write it before calling `nix-update`: the hash is recomputed from `<pkg>.src` in the
+  checkout, so a commit written afterwards leaves the hash pointing at the previous source.
 - For a tag-based `fetchFromGitHub` consumed by the default `nix-update-script`, use
   `rev = "v${version}"` rather than `tag = ...` while CI runs `nix-update` 1.16.0. The
   `tag` spelling exposes `refs/tags/vX` as `rev`, which 1.16.0 compares with the feed's
