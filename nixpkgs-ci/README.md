@@ -248,13 +248,21 @@ A release-tag source that uses the default `nix-update-script` should pass its t
 `package.rev or package.tag` with the feed's `vX`, so the mismatch turns every no-op run
 into a fake `vX -> vX` update and recomputes the source and dependency hashes.
 `rev = "vX"` fetches the same archive contents and fixed-output path, but compares equal.
-Upstream's unreleased `nix-update` reverses the preference; revisit this rule when the CI
-pin moves.
+Upstream's unreleased `nix-update` reverses the preference
+(`Mic92/nix-update@4f9f53413ba6`, "fix: prefer tag over rev"; no release carries it yet).
+Delete the rule once the CI pin reaches a release containing it: `tag = ...` then compares
+equal and the choice is style. Only the fork's own branches are in scope for that cleanup --
+the same spelling is ordinary upstream nixpkgs style in hundreds of packages, so a
+tree-wide sweep of `pkgs/by-name` would be a diff nobody asked for.
 
 A custom update script that rewrites a commit-ish field (`rev`, or a `buildCommit` the
 `src` refers to) must do so **before** it calls `nix-update`: `nix-update` recomputes the
 hash from `<pkg>.src` as it evaluates in the checkout, so a commit written afterwards
-leaves the hash describing the previous source.
+leaves the hash describing the previous source. Ordering is not enough when the field is
+a full commit SHA: 1.16.0 still compares that SHA with the feed's tag, finds a difference,
+and replaces the literal SHA with the tag text wherever it appears -- which is how a
+`buildCommit` ends up holding `rust-vX`. Pin the tag in `rev` and keep the commit in its
+own field, as `pkgs/by-name/co/codex` does.
 
 If the build fails, nothing is committed. The leg pushes a
 `ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the unit's versions and the
