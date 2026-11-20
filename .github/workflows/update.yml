@@ -204,6 +204,7 @@ jobs:
           # 跟着一起没。按 run 分开后，两个 run 互不影响，读不完也不会被顶掉。
           probe_dir=$(mktemp -d)
           probe_ref="ci-probe/$(printf '%s' "$BRANCH" | tr '/' '-')/$GITHUB_RUN_ID"
+          probe_lock="$probe_dir.lock"
           build_log=/tmp/build.log
           probe_start=$(date +%s)
           : > "$build_log"
@@ -249,18 +250,34 @@ jobs:
           }
 
           push_probe() {
-            git -C "$probe_dir" add -A >/dev/null 2>&1 || return 0
-            git -C "$probe_dir" -c user.name=ci-probe -c user.email=ci-probe@invalid \
-              commit -qm "probe $(date -u +%H:%M:%SZ)" 2>/dev/null || return 0
-            # 一次网络抖动就丢一分钟的现场，重试几次；仍然失败才记一行（那行本身
-            # 也只在步骤日志里，机器被回收时同样看不到）。
-            for attempt in 1 2 3; do
-              git -C "$probe_dir" push -q --force origin "HEAD:refs/heads/$probe_ref" 2>/dev/null \
-                && return 0
-              sleep 2
-            done
-            printf '[probe] push failed\n'
+            (
+              # 采样循环和构建设置的 mark 会同时推，共用一个 index 会让一边的
+              # commit 丢掉。锁放在仓库外，免得被 git add -A 收进去。
+              flock -w 10 9 || return 0
+              git -C "$probe_dir" add -A >/dev/null 2>&1 || return 0
+              git -C "$probe_dir" -c user.name=ci-probe -c user.email=ci-probe@invalid \
+                commit -qm "probe $(date -u +%H:%M:%SZ)" 2>/dev/null || return 0
+              # 一次网络抖动就丢一个窗口的现场，重试几次；仍然失败才记一行（那行
+              # 本身也只在步骤日志里，机器被回收时同样看不到）。
+              for attempt in 1 2 3; do
+                git -C "$probe_dir" push -q --force origin "HEAD:refs/heads/$probe_ref" 2>/dev/null \
+                  && return 0
+                sleep 2
+              done
+              printf '[probe] push failed\n'
+            ) 9>"$probe_lock"
           }
+
+          # 采样只证明「还活着」。构建结束、退出码这些事件必须马上推，否则
+          # 会在下一个采样窗口之前跟着 runner 一起消失。
+          mark() {
+            printf '[stage] %s %s\n' "$(date -u +%H:%M:%SZ)" "$*" \
+              >> "$probe_dir/stages.txt"
+            push_probe
+          }
+
+          # 第一分钟就失联时，连这条 run 的分支都不会存在；先推一次。
+          mark "probe started"
 
           (
             n=0
@@ -269,7 +286,10 @@ jobs:
               n=$((n + 1))
               # 收尾时才采的现场，在硬失联时根本跑不到；每分钟重采一次，至少留下
               # 死亡前最后一分钟 oomd/journal 的样子。
-              if [ $((n % 6)) -eq 0 ]; then forensics; push_probe; fi
+              if [ $((n % 6)) -eq 0 ]; then forensics; fi
+              # 每个采样都推：六十秒一推时，死前最后一分钟的编译/链接进度会整段
+              # 丢掉，而链接正好只持续一两分钟。
+              push_probe
             done
           ) &
           resmon=$!
@@ -511,7 +531,7 @@ jobs:
           # 然后真的构建。测试跑不跑由包自己的 doCheck 决定：pkg/ 分支按政策
           # 设 false，准备给 upstream 的 PR 分支才需要完整测试。产物直接进 mtul。
           verify() {
-            local a args=()
+            local a args=() rc=0
             for a in "$@"; do
               nix-instantiate --eval --strict \
                 --option allow-import-from-derivation false \
@@ -522,15 +542,19 @@ jobs:
             # swap 一次都没动过；冲高的是链接那一步，而它是单进程，-j 管不到。
             # 降核只换来更慢的编译，所以回到默认的全部核心。
             #
-            # 输出同时落到 $build_log：探针要能说出这一轮编译到了哪个 crate、
-            # 有没有走到链接，runner 没了也不至于只剩一句 lost communication。
-            cachix watch-exec mtul -- nix-build "${args[@]}" --no-out-link 2>&1 \
-              | tee -a "$build_log"
+            # -L 让 nix-build 边编译边输出；不加时只有结束时才打印日志尾部，
+            # 探针在整个构建期间看到的 build= 永远是空的。调用方负责把输出
+            # tee 到固定的 $build_log，避免后台采样进程拿到的是旧路径。
+            mark "build start: $*"
+            cachix watch-exec mtul -- nix-build -L "${args[@]}" --no-out-link 2>&1 \
+              || rc=$?
+            mark "build exit=$rc: $*"
+            return "$rc"
           }
 
           if [ "$VERIFY_ONLY" = "true" ]; then
             echo "verify only: ${NEW[*]}"
-            verify "${NEW[@]}"
+            verify "${NEW[@]}" 2>&1 | tee "$build_log"
             exit 0
           fi
 
@@ -737,7 +761,6 @@ jobs:
               git reset -q --hard "$before"
               continue
             fi
-            build_log="$RUNNER_TEMP/build-$pkg.log"
             if ! verify "${group[@]}" 2>&1 | tee "$build_log"; then
               # 环境失败不是候选的属性：换一台 runner 就可能过。打成 ci-failed
               # 会把这个版本永久钉住，只能等人删 tag；这种只跳过这一轮。
@@ -800,7 +823,7 @@ jobs:
           # 冲突。和包升级走同一条判据：先构建，绿了再推。
           if [ "$auto_resolved" = true ] && [ "$lease_tip" = "$old_tip" ]; then
             echo "$BRANCH: 基线冲突已自动消解，构建后推送"
-            if verify "${NEW[@]}"; then
+            if verify "${NEW[@]}" 2>&1 | tee "$build_log"; then
               if git push --force-with-lease="refs/heads/$BRANCH:$lease_tip" \
                 "$FORK_URL" "HEAD:refs/heads/$BRANCH"; then
                 echo "pushed $BRANCH: baseline -> $UPSTREAM_BRANCH"
