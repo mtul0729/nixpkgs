@@ -4,6 +4,29 @@ let
   testPort = 6807;
   testAuth = "test-access-code";
 
+  # Runs unprivileged from a transient unit, so it brings its own PATH: systemd
+  # units in NixOS otherwise only see systemd's own bin directory.
+  uiProbe = pkgs.writeShellScript "siyuan-ui-probe" ''
+    export PATH="${lib.makeBinPath [
+      pkgs.coreutils
+      pkgs.curl
+    ]}"
+    for _ in $(seq 1 3000); do
+      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+        --user siyuan:test-access-code \
+        http://127.0.0.1:${toString testPort}/appearance/langs/zh-CN.json || true)
+      if [ "$code" = 200 ]; then
+        : > /tmp/ui-probe.ok
+        exit 0
+      fi
+      if [ "$code" = 404 ]; then
+        echo "$code" >> /tmp/ui-probe.404
+      fi
+      sleep 0.01
+    done
+    exit 1
+  '';
+
   lanNode =
     { ... }:
     {
@@ -128,8 +151,21 @@ in
     machine.succeed("curl --fail --max-time 10 --user siyuan:test-access-code -H 'Content-Type: application/json' -d '{\"scheme\":\"socks5\",\"host\":\"127.0.0.1\",\"port\":\"1080\"}' http://127.0.0.1:6807/api/system/setNetworkProxy >/dev/null")
     machine.wait_until_succeeds("${pkgs.jq}/bin/jq -e '.system.networkProxy.scheme == \"socks5\"' /var/lib/siyuan/conf/conf.json")
 
-    # ExecStartPost waits for appearance/, so a restart only reports success
-    # once the UI is servable again.
+    # The module no longer waits in ExecStartPost. Since f56a0717ce the kernel
+    # copies appearance/ before it listens, so a client must never see a 404
+    # once the port opens. Probe continuously across cold starts to catch a
+    # regression in that ordering.
+    for run in range(3):
+        machine.succeed("systemctl stop siyuan")
+        machine.succeed("rm -rf /var/lib/siyuan/conf/appearance /tmp/ui-probe.ok /tmp/ui-probe.404")
+        machine.succeed(
+            f"systemd-run --unit=ui-probe-{run} --collect --property=Type=exec ${uiProbe}"
+        )
+        machine.succeed("systemctl start siyuan")
+        machine.wait_until_succeeds("test -f /tmp/ui-probe.ok", timeout=datetime.timedelta(seconds=60))
+        machine.fail("test -s /tmp/ui-probe.404")
+
+    # A restart restores the module's proxy value and keeps the UI servable.
     machine.succeed("systemctl restart siyuan")
     machine.wait_for_open_port(6807)
     machine.succeed("curl --fail --max-time 10 --user siyuan:test-access-code http://127.0.0.1:6807/appearance/langs/zh-CN.json >/dev/null")

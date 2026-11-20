@@ -349,19 +349,11 @@ in
         StartLimitBurst = 5;
       };
 
-      # The kernel starts serving before it copies appearance/ into the
-      # workspace, so a client that connects right after start still sees 404s.
-      # This runs as ExecStartPost, so `systemctl start` returns only once the
-      # UI assets are actually there.
-      postStart = ''
-        for _ in {1..300}; do
-          if [[ -s ${workspaceDir}/conf/appearance/langs/zh-CN.json ]]; then
-            exit 0
-          fi
-          sleep 0.1
-        done
-        echo "warning: appearance resources did not appear within 30s" >&2
-      '';
+      # Since f56a0717ce (3.8.10-alpha.5) the kernel finishes copying
+      # appearance/ before it starts the HTTP server, so a client that can
+      # connect already gets UI resources and no ExecStartPost wait is needed.
+      # Do not lower the package floor below that commit without reintroducing
+      # the wait: older kernels listen before the copy and serve 404s.
 
       serviceConfig = {
         Type = "simple";
