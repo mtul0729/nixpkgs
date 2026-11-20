@@ -198,8 +198,12 @@ jobs:
           # 但这些都写在步骤日志里，而 runner 被回收时 GitHub 拿不到日志：三次事故
           # 全是 BlobNotFound，死因跟着机器一起消失。所以采样同时往 ci-probe/<branch>
           # 分支推（ci-probe/* 不触发任何 workflow），机器没了证据还在。
+          #
+          # 分支名必须带上 run id：每个 run 都从空仓库开始，如果共用一条分支，
+          # 下一个 run 第一次推送就会把上一个（死掉的）run 的现场覆写掉，证据仍然
+          # 跟着一起没。按 run 分开后，两个 run 互不影响，读不完也不会被顶掉。
           probe_dir=$(mktemp -d)
-          probe_ref="ci-probe/$(printf '%s' "$BRANCH" | tr '/' '-')"
+          probe_ref="ci-probe/$(printf '%s' "$BRANCH" | tr '/' '-')/$GITHUB_RUN_ID"
           build_log=/tmp/build.log
           probe_start=$(date +%s)
           : > "$build_log"
@@ -248,8 +252,14 @@ jobs:
             git -C "$probe_dir" add -A >/dev/null 2>&1 || return 0
             git -C "$probe_dir" -c user.name=ci-probe -c user.email=ci-probe@invalid \
               commit -qm "probe $(date -u +%H:%M:%SZ)" 2>/dev/null || return 0
-            git -C "$probe_dir" push -q --force origin "HEAD:refs/heads/$probe_ref" 2>/dev/null \
-              || printf '[probe] push failed\n'
+            # 一次网络抖动就丢一分钟的现场，重试几次；仍然失败才记一行（那行本身
+            # 也只在步骤日志里，机器被回收时同样看不到）。
+            for attempt in 1 2 3; do
+              git -C "$probe_dir" push -q --force origin "HEAD:refs/heads/$probe_ref" 2>/dev/null \
+                && return 0
+              sleep 2
+            done
+            printf '[probe] push failed\n'
           }
 
           (
@@ -257,7 +267,9 @@ jobs:
             while sleep 10; do
               sample
               n=$((n + 1))
-              if [ $((n % 6)) -eq 0 ]; then push_probe; fi
+              # 收尾时才采的现场，在硬失联时根本跑不到；每分钟重采一次，至少留下
+              # 死亡前最后一分钟 oomd/journal 的样子。
+              if [ $((n % 6)) -eq 0 ]; then forensics; push_probe; fi
             done
           ) &
           resmon=$!
