@@ -82,7 +82,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
   src = fetchFromGitHub {
     owner = "openai";
     repo = "codex";
-    rev = finalAttrs.buildCommit;
+    # The release tag, not buildCommit: nix-update compares the rev it reads
+    # from `src` with the feed's tag, and a full SHA never matches, so every
+    # run would rewrite buildCommit and recompute both hashes. The tag and the
+    # commit resolve to the same archive.
+    rev = "rust-v${finalAttrs.version}";
     hash = "sha256-iJkH0tknBE/+bAWWKDiG9rLfuj0KDcSHDa91Offd7R8=";
   };
 
@@ -292,6 +296,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
     (nix-update-script {
       extraArgs = [
         "--use-github-releases"
+        # Newest first: the newest 100 releases already cover everything this
+        # project publishes between two runs, and paging the full feed is ~6 MB
+        # per page with a 504 on any page aborting the update.
+        "--github-releases-limit"
+        "100"
         "--version-regex"
         "^rust-v(\\d+\\.\\d+\\.\\d+)$"
       ];
