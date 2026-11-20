@@ -234,11 +234,15 @@ Those lines only live in the step log, and GitHub has no log to upload once the 
 reclaimed: three consecutive codex legs failed with `BlobNotFound` and nothing else. The
 probe therefore keeps its evidence outside the VM. A sample is appended every ten seconds
 -- memory, swap, load, the three largest processes, free space and the last line of the
-build output -- and pushed once a minute to `ci-probe/<branch>`, together with the last
-30 lines of that output. The `EXIT` trap appends what the runner would otherwise take with
-it: `MemoryPeak`/`MemorySwapPeak` of the `nix-daemon` cgroup, whether `systemd-oomd` is
-active, its journal, and any kernel OOM line. The branch is throwaway evidence, deleted
-once the question is answered; `ci-probe/*` triggers no workflow.
+build output -- and pushed once a minute to `ci-probe/<branch>/<run-id>`, together with
+the last 30 lines of that output. The ref carries the run id because every run starts from
+an empty repository: a shared ref is force-pushed over as soon as the next run starts,
+which is how one dead run's evidence disappeared. Per run, a leg that died stays readable
+until its branch is deleted. The `nix-daemon` cgroup peak, `systemd-oomd`'s state and
+journal, and any kernel OOM line are re-sampled every minute instead of only in the
+`EXIT` trap, which a reclaimed VM never reaches. The branches are throwaway evidence,
+deleted with `git push origin :refs/heads/ci-probe/<branch>/<run-id>` once the question
+is answered; `ci-probe/*` triggers no workflow.
 
 Read it as a fork, not as a graph. Samples that stop while memory is flat mean the VM was
 reclaimed, and no package change will help. Memory pinned near the limit with `rustc` or
