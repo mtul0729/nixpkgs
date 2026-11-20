@@ -245,7 +245,7 @@ jobs:
           }
 
           push_probe() {
-            git -C "$probe_dir" add -A >/dev/null 2>&1
+            git -C "$probe_dir" add -A >/dev/null 2>&1 || return 0
             git -C "$probe_dir" -c user.name=ci-probe -c user.email=ci-probe@invalid \
               commit -qm "probe $(date -u +%H:%M:%SZ)" 2>/dev/null || return 0
             git -C "$probe_dir" push -q --force origin "HEAD:refs/heads/$probe_ref" 2>/dev/null \
@@ -257,7 +257,7 @@ jobs:
             while sleep 10; do
               sample
               n=$((n + 1))
-              [ $((n % 6)) -eq 0 ] && push_probe
+              if [ $((n % 6)) -eq 0 ]; then push_probe; fi
             done
           ) &
           resmon=$!
