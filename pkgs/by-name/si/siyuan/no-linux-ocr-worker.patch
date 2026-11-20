@@ -1,0 +1,12 @@
+--- a/model/ocr.go
++++ b/model/ocr.go
+@@ -157,9 +157,6 @@
+ 		filename = "libonnxruntime.dylib"
+ 	}
+ 	result := ocr.PaddleConfig{Directory: ocrModelDirectory(value.Model), Library: filepath.Join(directory, filename), Thresholds: ocr.Thresholds(value.Thresholds)}
+-	if runtime.GOOS == "linux" {
+-		result.Worker = filepath.Join(directory, "siyuan-ocr")
+-	}
+ 	if runtime.GOOS == "android" {
+ 		result.Library = "libonnxruntime.so"
+ 	}

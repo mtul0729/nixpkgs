@@ -19,7 +19,6 @@
   zip,
   jq,
   python3,
-  go_1_26,
   onnxruntime,
   darwin,
   nixosTests,
@@ -126,10 +125,10 @@ let
     ln -s ${lib.getExe pandoc} ${resourcesDir}/pandoc/bin/pandoc
   '';
 
-  # Same trick for OCR's onnxruntime: kernel (darwin, in-process) and worker
-  # (linux, subprocess) dlopen it from a fixed relative path through
-  # OrtGetApiBase's C API, which is backwards compatible, so nixpkgs' newer
-  # onnxruntime can serve a worker built against an older one.
+  # Same trick for OCR's onnxruntime: the kernel dlopens it in-process from a
+  # fixed relative path through OrtGetApiBase's C API, which is backwards
+  # compatible, so nixpkgs' onnxruntime need not match the version upstream's
+  # headers came from.
   dedupeOnnxruntime = resourcesDir: ''
     ocrRuntimeDir=${resourcesDir}/stage/ocr/runtime/${ocrTarget}
     mkdir -p "$ocrRuntimeDir"
@@ -145,7 +144,7 @@ let
   # client and the server use the same app tree, so keep this setup in one
   # place instead of maintaining two copies of the offline preparation logic.
   ocrSetup =
-    { src, kernel }:
+    { src }:
     lib.optionalString hasOCR ''
       # ---- offline built-in OCR resources (since v3.8.7) ----
       # Upstream's beforePack hook runs ../scripts/prepare-ocr.py, which expects a
@@ -155,27 +154,13 @@ let
       mkdir -p ocr-layout/scripts
       cp -r ${src}/scripts/. ocr-layout/scripts/
       ln -s "$PWD" ocr-layout/app
-      # kernel has to be a real directory: the goModules FOD is a vendor tree
-      # (modules.txt at its root) and the worker shares the kernel's modules.
-      mkdir -p ocr-layout/kernel
-      cp -r ${src}/kernel/. ocr-layout/kernel/
-      ln -s ${kernel.goModules} ocr-layout/kernel/vendor
 
       ${ocrModelCopies}
       python3 ocr-layout/scripts/prepare-ocr.py
 
-      # ocr-worker: the same command and output path as upstream's
-      # prepare-ocr.py --build-worker, built offline in vendor mode.
+      # The kernel loads onnxruntime in-process on Linux too (see the
+      # no-linux-ocr-worker.patch rationale), so there is no worker to build.
       mkdir -p stage/ocr/runtime/${ocrTarget}
-      ${lib.optionalString isLinux ''
-        workerOut="$PWD/stage/ocr/runtime/${ocrTarget}/siyuan-ocr"
-        (
-          cd ocr-layout/kernel
-          env CGO_ENABLED=1 GOFLAGS=-mod=vendor GOPROXY=off GOTOOLCHAIN=local \
-            GOCACHE="$PWD/../../.gocache" \
-            go build -trimpath -ldflags="-s -w" -o "$workerOut" ./ocr/cmd/ocr-worker
-        )
-      ''}
 
       # The server serves the runtime library from the same relative path the
       # client uses after installation.
@@ -216,6 +201,11 @@ stdenv.mkDerivation (finalAttrs: {
       (replaceVars ./set-pandoc-path.patch {
         pandoc_path = lib.getExe pandoc;
       })
+      # Upstream selects the ocr-worker on Linux by GOOS alone: its release
+      # kernel is static-pie musl and cannot dlopen a glibc ONNX Runtime. This
+      # kernel is dynamic glibc with cgo, so it loads the runtime in-process
+      # like the macOS build; drop the worker selection.
+      ./no-linux-ocr-worker.patch
     ];
 
     # Set flags and tags as per upstream's Dockerfile
@@ -264,10 +254,6 @@ stdenv.mkDerivation (finalAttrs: {
   ]
   ++ lib.optionals hasOCR [
     python3 # prepare-ocr.py is stdlib only
-  ]
-  ++ lib.optionals (hasOCR && isLinux) [
-    # upstream builds a CGO ocr-worker on linux; gcc comes from stdenv
-    go_1_26
   ];
 
   pnpmDeps = fetchPnpmDeps {
@@ -328,7 +314,7 @@ stdenv.mkDerivation (finalAttrs: {
     cp -r ${electron.dist} electron-runtime
     chmod -R u+w electron-runtime
   ''
-  + ocrSetup { inherit (finalAttrs) src kernel; };
+  + ocrSetup { inherit (finalAttrs) src; };
 
   postBuild = ''
     electronBuilderArgs=(
@@ -412,12 +398,9 @@ stdenv.mkDerivation (finalAttrs: {
         ]
         ++ lib.optionals hasOCR [
           python3
-        ]
-        ++ lib.optionals (hasOCR && isLinux) [
-          go_1_26
         ];
 
-        postConfigure = ocrSetup { inherit (finalAttrs) src kernel; };
+        postConfigure = ocrSetup { inherit (finalAttrs) src; };
         postBuild = "node scripts/trimChangelogs.js";
 
         installPhase = ''
