@@ -295,12 +295,6 @@ rustPlatform.buildRustPackage (finalAttrs: {
     ./update-build-commit.sh
     (nix-update-script {
       extraArgs = [
-        "--use-github-releases"
-        # Newest first: the newest 100 releases already cover everything this
-        # project publishes between two runs, and paging the full feed is ~6 MB
-        # per page with a 504 on any page aborting the update.
-        "--github-releases-limit"
-        "100"
         "--version-regex"
         "^rust-v(\\d+\\.\\d+\\.\\d+)$"
       ];
