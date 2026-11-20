@@ -334,6 +334,19 @@ Branches, commits and pushes go through plain git. A few conventions keep the sh
 
 ## Verifying a run
 
+To build a branch that is not in `branches.toml` — trying a patch, evaluating a PR,
+checking a rebase — push it to the fork and run `build-branch`. It builds the branch
+as-is, caches the result in `mtul`, and never feeds `integration`:
+
+```bash
+gh workflow run build-branch.yml -R mtul0729/nixpkgs \
+  -f branch=test/<pkg>-<topic> -f attrs='<pkg> <pkg>.passthru.server'
+```
+
+Without `attrs` it builds the by-name packages the branch adds or modifies since its
+merge base. This does not replace registering a package branch: only `update` moves a
+package version and its baseline.
+
 ```bash
 gh run list -R mtul0729/nixpkgs --limit 5
 gh run view <id> -R mtul0729/nixpkgs --log --job=<job id>
