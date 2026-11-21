@@ -1,14 +1,14 @@
 --- nix-daemon cgroup ---
-MemoryPeak=10783166464
+MemoryPeak=11055689728
 MemorySwapPeak=0
 MemoryMax=infinity
 MemorySwapMax=infinity
 --- cgroup files (/system.slice/nix-daemon.service) ---
-memory.peak: 10783166464 
+memory.peak: 11055689728 
 memory.events: low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0 sock_throttled 0 
 memory.swap.peak: 0 
 memory.swap.events: high 0 max 0 fail 0 
-memory.pressure: some avg10=0.00 avg60=0.00 avg300=0.00 total=1798 full avg10=0.00 avg60=0.00 avg300=0.00 total=1798 
+memory.pressure: some avg10=0.00 avg60=0.00 avg300=0.00 total=7607 full avg10=0.00 avg60=0.00 avg300=0.00 total=6193 
 --- systemd-oomd ---
 inactive
 -- No entries --
