@@ -5,3 +5,4 @@
 [resmon] +56s 09:18:04 mem=2099/15701MB swap=0/19455MB load=2.66 1.19 0.48 top=451MB:nix-build,243MB:nix-daemon,199MB:Runner.Worker root=63G free, 57% used build=magpie-cli> go: downloading github.com/wailsapp/wails/v3 v3.0.0-beta.24
 [resmon] +67s 09:18:15 mem=1975/15701MB swap=0/19455MB load=3.72 1.46 0.58 top=451MB:nix-build,199MB:Runner.Worker,132MB:cachix root=63G free, 57% used build=magpie-cli> Building subPackage ./.
 [resmon] +79s 09:18:27 mem=2200/15701MB swap=0/19455MB load=6.97 2.29 0.86 top=451MB:nix-build,199MB:Runner.Worker,147MB:cachix root=62G free, 58% used build=magpie-cli> Building subPackage ./.
+[resmon] +90s 09:18:38 mem=2236/15701MB swap=0/19455MB load=9.13 2.90 1.08 top=451MB:nix-build,199MB:Runner.Worker,147MB:cachix root=62G free, 58% used build=magpie-cli> Building subPackage ./.
