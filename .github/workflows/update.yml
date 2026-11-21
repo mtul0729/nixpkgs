@@ -571,11 +571,14 @@ jobs:
             # swap 一次都没动过；冲高的是链接那一步，而它是单进程，-j 管不到。
             # 降核只换来更慢的编译，所以回到默认的全部核心。
             #
-            # -L 让 nix-build 边编译边输出；不加时只有结束时才打印日志尾部，
-            # 探针在整个构建期间看到的 build= 永远是空的。调用方负责把输出
-            # tee 到固定的 $build_log，避免后台采样进程拿到的是旧路径。
+            # --log-format bar-with-logs 让 nix-build 边编译边输出；不加时旧版
+            # Nix 只在结束时才打印日志尾部，探针在整个构建期间看到的 build=
+            # 永远是空的。不能用 -L：Nix 2.35 的 nix-build 已经不认这个 flag。
+            # 调用方负责把输出 tee 到固定的 $build_log，避免后台采样进程拿到
+            # 的是旧路径。
             mark "build start: $*"
-            cachix watch-exec mtul -- nix-build -L "${args[@]}" --no-out-link 2>&1 \
+            cachix watch-exec mtul -- nix-build --log-format bar-with-logs \
+              "${args[@]}" --no-out-link 2>&1 \
               || rc=$?
             mark "build exit=$rc: $*"
             return "$rc"
