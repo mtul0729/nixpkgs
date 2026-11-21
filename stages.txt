@@ -1,2 +1,3 @@
 [stage] 12:21:25Z probe started
 [stage] 12:22:14Z build start: magpie magpie-cli
+[stage] 12:24:58Z build exit=0: magpie magpie-cli
