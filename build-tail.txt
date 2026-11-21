@@ -1,0 +1,30 @@
+magpie-cli> go: downloading golang.org/x/crypto v0.53.0
+magpie> source root is source
+magpie-cli> go: downloading golang.org/x/net v0.56.0
+magpie> Running phase: patchPhase
+magpie> applying patch /nix/store/3dhdllrg4f15aqq5hl6rlzra485zdv93-nix-support.patch
+magpie> patching file internal/update/update.go
+magpie> Hunk #1 succeeded at 213 (offset 109 lines).
+magpie> patching file internal/autostart/autostart.go
+magpie> Hunk #2 succeeded at 78 (offset 1 line).
+magpie> patching file internal/autostart/autostart_other.go
+magpie> Hunk #1 succeeded at 238 (offset 182 lines).
+magpie> patching file internal/gui/instance_unix.go
+magpie> Hunk #1 succeeded at 39 (offset 4 lines).
+magpie> patching file internal/gui/scheme_linux.go
+magpie> applying patch /nix/store/125xcs4zvsr5bpjwfhdfiggzgvcqkcc5-tray-watcher.patch
+magpie> patching file internal/gui/bus_linux.go
+magpie> patching file internal/gui/bus_linux_test.go
+magpie> Running phase: updateAutotoolsGnuConfigScriptsPhase
+magpie> Running phase: configurePhase
+magpie-cli> go: downloading github.com/clipperhouse/uax29/v2 v2.5.0
+magpie-cli> go: downloading github.com/gen2brain/h265 v0.2.4
+magpie-cli> go: downloading github.com/go-ole/go-ole v1.3.0
+magpie> Running phase: buildPhase
+magpie> Building subPackage ./.
+magpie-cli> go: downloading modernc.org/libc v1.79.0
+magpie-cli> go: downloading github.com/dlclark/regexp2 v1.11.5
+magpie-cli> go: downloading github.com/charmbracelet/bubbles v0.21.1
+magpie-cli> go: downloading github.com/charmbracelet/bubbletea v1.3.10
+magpie-cli> go: downloading github.com/sigstore/sigstore-go v1.1.4
+magpie-cli> go: downloading github.com/wailsapp/wails/v3 v3.0.0-beta.24
