@@ -236,13 +236,28 @@ jobs:
             tail -n 30 "$build_log" > "$probe_dir/build-tail.txt" 2>/dev/null || true
           }
 
-          # 平时拿不到的现场：nix-daemon 那个 cgroup 的峰值、oomd 有没有动手、
-          # 内核有没有报 OOM。只在收尾时跑一次，跟采样一起推上去。
+          # 平时拿不到的现场：nix-daemon 那个 cgroup 的峰值和事件计数、oomd 有没
+          # 有动手、内核有没有报 OOM。只在收尾时跑一次，跟采样一起推上去。
+          #
+          # memory.events 里的 oom_kill 是「到底撞没撞上限」的直接答案；没撞上限
+          # 却被拖死的话，答案在 memory.pressure 的 full avg 里。
           forensics() {
             {
               printf -- '--- nix-daemon cgroup ---\n'
               systemctl show nix-daemon.service \
                 -p MemoryPeak -p MemorySwapPeak -p MemoryMax -p MemorySwapMax 2>/dev/null || true
+              cg=$(systemctl show -p ControlGroup --value nix-daemon.service 2>/dev/null || true)
+              printf -- '--- cgroup files (%s) ---\n' "${cg:-none}"
+              if [ -n "$cg" ]; then
+                for f in memory.peak memory.events memory.swap.peak memory.swap.events \
+                         memory.pressure; do
+                  if [ -r "/sys/fs/cgroup$cg/$f" ]; then
+                    printf '%s: ' "$f"
+                    tr '\n' ' ' < "/sys/fs/cgroup$cg/$f"
+                    printf '\n'
+                  fi
+                done
+              fi
               printf -- '--- systemd-oomd ---\n'
               systemctl is-active systemd-oomd 2>/dev/null || true
               sudo journalctl -u systemd-oomd --no-pager -n 20 2>/dev/null || true

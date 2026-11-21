@@ -245,7 +245,10 @@ old flat `ci-probe/<branch>` makes `ci-probe/<branch>/<run-id>` impossible to cr
 the push fails with `cannot lock ref`. Per run, a leg that died stays readable until its
 branch is deleted. The `nix-daemon` cgroup peak, `systemd-oomd`'s state and journal, and
 any kernel OOM line are re-sampled every minute instead of only in the `EXIT` trap, which
-a reclaimed VM never reaches. The branches are throwaway evidence, deleted with
+a reclaimed VM never reaches. The same sample reads the unit's `memory.events` and
+`memory.swap.events` -- an `oom_kill` count above zero is the direct answer to "did it hit
+the limit" -- and `memory.pressure`, whose `full avg` shows the stall that follows when it
+did not. The branches are throwaway evidence, deleted with
 `git push origin :refs/heads/ci-probe/<run-id>/<branch>` once the question is answered;
 `ci-probe/*` triggers no workflow.
 
