@@ -1,0 +1,1 @@
+[resmon] +11s 15:15:39 mem=1431/15983MB swap=0/19455MB load=1.87 0.63 0.24 top=162MB:nix-instantiate,135MB:Runner.Worker,104MB:provjobd9887192 root=65G free, 56% used build=
