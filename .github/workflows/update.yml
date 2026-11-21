@@ -202,8 +202,11 @@ jobs:
           # 分支名必须带上 run id：每个 run 都从空仓库开始，如果共用一条分支，
           # 下一个 run 第一次推送就会把上一个（死掉的）run 的现场覆写掉，证据仍然
           # 跟着一起没。按 run 分开后，两个 run 互不影响，读不完也不会被顶掉。
+          # run id 放在 branch 前面：Git 的 ref 是文件路径，旧的平分支
+          # ci-probe/pkg-codex 和 ci-probe/pkg-codex/<run-id> 不能共存，后者的
+          # push 会以 cannot lock ref 失败。
           probe_dir=$(mktemp -d)
-          probe_ref="ci-probe/$(printf '%s' "$BRANCH" | tr '/' '-')/$GITHUB_RUN_ID"
+          probe_ref="ci-probe/$GITHUB_RUN_ID/$(printf '%s' "$BRANCH" | tr '/' '-')"
           probe_lock="$probe_dir.lock"
           build_log=/tmp/build.log
           probe_start=$(date +%s)
