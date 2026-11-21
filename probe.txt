@@ -1,1 +1,2 @@
 [resmon] +11s 15:15:45 mem=1505/15701MB swap=0/16383MB load=2.27 0.83 0.31 top=322MB:nix-instantiate,200MB:Runner.Worker,101MB:provjobd3338885 root=68G free, 54% used build=
+[resmon] +22s 15:15:56 mem=1807/15701MB swap=0/16383MB load=2.29 0.88 0.33 top=429MB:nix-shell,325MB:nix-daemon,200MB:Runner.Worker root=67G free, 55% used build=
