@@ -235,10 +235,11 @@ reclaimed: three consecutive codex legs failed with `BlobNotFound` and nothing e
 probe therefore keeps its evidence outside the VM. A sample is appended every ten seconds
 --- memory, swap, load, the three largest processes, free space and the last line of the
 build output -- and every sample is pushed to `ci-probe/<run-id>/<branch>`, together with
-the last 50 lines of that output. `nix-build -L` is what makes those lines live: without
-it Nix only prints the log when the build ends, so the probe saw an empty `build=` for the
-whole leg. A build start and its exit status are pushed immediately as well, not at the
-next tick. The ref carries the run id because every run starts from an empty repository: a
+the last 50 lines of that output. `nix-build --log-format bar-with-logs` is what makes those
+lines live: without it older Nix only prints the log when the build ends, so the probe saw
+an empty `build=` for the whole leg. (`nix-build -L` cannot be used: Nix 2.35 rejects it.)
+A build start and its exit status are pushed immediately as well, not at the next tick. The
+ref carries the run id because every run starts from an empty repository: a
 shared ref is force-pushed over as soon as the next run starts, which is how one dead
 run's evidence disappeared. The run id comes first because Git stores refs as paths: an
 old flat `ci-probe/<branch>` makes `ci-probe/<branch>/<run-id>` impossible to create, and
