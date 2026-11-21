@@ -1,24 +1,3 @@
-magpie>    60 | Display *     gdk_x11_display_get_xdisplay     (GdkDisplay  *display);
-magpie>       |               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
-magpie> linux_cgo.c:1068:5: warning: 'gdk_x11_surface_get_xid' is deprecated [-Wdeprecated-declarations]
-magpie>  1068 |     Window xwindow = gdk_x11_surface_get_xid(GDK_X11_SURFACE(surface));
-magpie>       |     ^~~~~~
-magpie> /nix/store/819f8069wnykygj4halb5y67r47hwhl2-gtk4-4.24.0-dev/include/gtk-4.0/gdk/x11/gdkx11surface.h:56:10: note: declared here
-magpie>    56 | Window   gdk_x11_surface_get_xid           (GdkSurface   *surface);
-magpie>       |          ^~~~~~~~~~~~~~~~~~~~~~~
-magpie> buildPhase completed in 3 minutes 51 seconds
-magpie> Running phase: glibPreInstallPhase
-magpie> Running phase: glibPreInstallPhase
-magpie> Running phase: glibPreInstallPhase
-magpie> Running phase: installPhase
-magpie> Copying '/nix/store/9v3mpw4ya8n56sv4aikrp3d3dyfbz3q3-magpie.desktop/share/applications/magpie.desktop' into '/nix/store/c9f34g25f3ga1609dp7qq53v1piywzi6-magpie-0.1.4633/share/applications'
-magpie> Running phase: gappsWrapperArgsHook
-magpie> Running phase: dropIconThemeCache
-magpie> Running phase: dropIconThemeCache
-magpie> Running phase: dropIconThemeCache
-magpie> Running phase: fixupPhase
-magpie> shrinking RPATHs of ELF executables and libraries in /nix/store/c9f34g25f3ga1609dp7qq53v1piywzi6-magpie-0.1.4633
-magpie> shrinking /nix/store/c9f34g25f3ga1609dp7qq53v1piywzi6-magpie-0.1.4633/bin/magpie
 magpie> checking for references to /build/ in /nix/store/c9f34g25f3ga1609dp7qq53v1piywzi6-magpie-0.1.4633...
 magpie> patching script interpreter paths in /nix/store/c9f34g25f3ga1609dp7qq53v1piywzi6-magpie-0.1.4633
 magpie> stripping (with command strip and flags -S -p) in /nix/store/c9f34g25f3ga1609dp7qq53v1piywzi6-magpie-0.1.4633/bin
@@ -28,3 +7,24 @@ magpie> Successfully managed to find version 0.1.4633 in the output of the comma
 magpie> magpie 0.1.4633
 magpie> Finished versionCheckPhase
 magpie> no Makefile or custom installCheckPhase, doing nothing
+magpie-cli> buildPhase completed in 3 minutes 31 seconds
+magpie-cli> Running phase: installPhase
+magpie-cli> Running phase: fixupPhase
+magpie-cli> shrinking RPATHs of ELF executables and libraries in /nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633
+magpie-cli> shrinking /nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633/bin/magpie
+magpie-cli> patchelf: cannot find section '.dynamic'. The input file is most likely statically linked
+magpie-cli> checking for references to /build/ in /nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633...
+magpie-cli> patchelf: cannot find section '.dynamic'. The input file is most likely statically linked
+magpie-cli> patching script interpreter paths in /nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633
+magpie-cli> stripping (with command strip and flags -S -p) in /nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633/bin
+magpie-cli> Running phase: installCheckPhase
+magpie-cli> Executing versionCheckPhase
+magpie-cli> Successfully managed to find version 0.1.4633 in the output of the command /nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633/bin/magpie --version
+magpie-cli> magpie 0.1.4633
+magpie-cli> Finished versionCheckPhase
+magpie-cli> no Makefile or custom installCheckPhase, doing nothing
+/nix/store/c9f34g25f3ga1609dp7qq53v1piywzi6-magpie-0.1.4633
+/nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633
+Pushing /nix/store/71aqai613z2lakzmvsrd7hsafc2849qi-magpie-cli-0.1.4633-go-modules (178.01 MiB)
+Pushing /nix/store/c9f34g25f3ga1609dp7qq53v1piywzi6-magpie-0.1.4633 (104.27 MiB)
+Pushing /nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633 (101.68 MiB)

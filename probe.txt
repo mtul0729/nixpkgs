@@ -26,3 +26,4 @@
 [resmon] +293s 06:28:39 mem=2203/15983MB swap=0/19455MB load=10.24 6.95 2.97 top=451MB:nix-build,181MB:compile,139MB:cachix root=57G free, 61% used build=magpie-cli> Building subPackage ./.
 [resmon] +305s 06:28:51 mem=2557/15983MB swap=0/19455MB load=8.94 6.82 2.99 top=451MB:nix-build,143MB:compile,139MB:cachix root=57G free, 61% used build=magpie-cli> Building subPackage ./.
 [resmon] +316s 06:29:02 mem=2334/15983MB swap=0/19455MB load=8.25 6.74 3.01 top=766MB:link,451MB:nix-build,139MB:cachix root=59G free, 60% used build=magpie> no Makefile or custom installCheckPhase, doing nothing
+[resmon] +327s 06:29:13 mem=1509/15983MB swap=0/19455MB load=7.05 6.54 2.98 top=114MB:Runner.Worker,106MB:provjobd3492319,82MB:Runner.Listener root=60G free, 59% used build=Pushing /nix/store/xn7ngkz09f2nrx6sgfcavzg2kilw74g7-magpie-cli-0.1.4633 (101.68 MiB)
