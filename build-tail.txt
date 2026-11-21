@@ -1,30 +1,30 @@
-magpie-cli> go: downloading github.com/go-openapi/jsonpointer v0.22.1
-magpie-cli> go: downloading github.com/go-logr/logr v1.4.3
-magpie-cli> go: downloading go.opentelemetry.io/otel/metric v1.38.0
-magpie-cli> go: downloading github.com/go-logr/stdr v1.2.2
-magpie-cli> go: downloading go.opentelemetry.io/auto/sdk v1.2.1
-magpie-cli> go: downloading github.com/go-openapi/jsonreference v0.21.3
+magpie> checking for references to /build/ in /nix/store/cimd075h15nk5bmwdn8z02a5i6qfilyh-magpie-0.1.4646...
+magpie> patching script interpreter paths in /nix/store/cimd075h15nk5bmwdn8z02a5i6qfilyh-magpie-0.1.4646
+magpie> stripping (with command strip and flags -S -p) in /nix/store/cimd075h15nk5bmwdn8z02a5i6qfilyh-magpie-0.1.4646/bin
+magpie> Running phase: installCheckPhase
+magpie> Executing versionCheckPhase
+magpie> Successfully managed to find version 0.1.4646 in the output of the command /nix/store/cimd075h15nk5bmwdn8z02a5i6qfilyh-magpie-0.1.4646/bin/magpie --version
+magpie> magpie 0.1.4646
+magpie> Finished versionCheckPhase
+magpie> no Makefile or custom installCheckPhase, doing nothing
+magpie-cli> buildPhase completed in 2 minutes 21 seconds
 magpie-cli> Running phase: installPhase
-building '/nix/store/pcfgbw3v0d6mx7rs5s0siwxnxzvaqhcg-magpie-cli-0.1.4646.drv'...
-magpie-cli> Using versionCheckHook
-magpie-cli> Running phase: unpackPhase
-magpie-cli> unpacking source archive /nix/store/fkwy62xb6cd8gs25xh2bz8dw5yrrb0g4-source
-magpie-cli> source root is source
-magpie-cli> Running phase: patchPhase
-magpie-cli> applying patch /nix/store/3dhdllrg4f15aqq5hl6rlzra485zdv93-nix-support.patch
-magpie-cli> patching file internal/update/update.go
-magpie-cli> Hunk #1 succeeded at 213 (offset 109 lines).
-magpie-cli> patching file internal/autostart/autostart.go
-magpie-cli> Hunk #2 succeeded at 78 (offset 1 line).
-magpie-cli> patching file internal/autostart/autostart_other.go
-magpie-cli> Hunk #1 succeeded at 238 (offset 182 lines).
-magpie-cli> patching file internal/gui/instance_unix.go
-magpie-cli> Hunk #1 succeeded at 39 (offset 4 lines).
-magpie-cli> patching file internal/gui/scheme_linux.go
-magpie-cli> applying patch /nix/store/125xcs4zvsr5bpjwfhdfiggzgvcqkcc5-tray-watcher.patch
-magpie-cli> patching file internal/gui/bus_linux.go
-magpie-cli> patching file internal/gui/bus_linux_test.go
-magpie-cli> Running phase: updateAutotoolsGnuConfigScriptsPhase
-magpie-cli> Running phase: configurePhase
-magpie-cli> Running phase: buildPhase
-magpie-cli> Building subPackage ./.
+magpie-cli> Running phase: fixupPhase
+magpie-cli> shrinking RPATHs of ELF executables and libraries in /nix/store/h5p9hxc490cn96c16sfh1g7ln8537g7w-magpie-cli-0.1.4646
+magpie-cli> shrinking /nix/store/h5p9hxc490cn96c16sfh1g7ln8537g7w-magpie-cli-0.1.4646/bin/magpie
+magpie-cli> patchelf: cannot find section '.dynamic'. The input file is most likely statically linked
+magpie-cli> checking for references to /build/ in /nix/store/h5p9hxc490cn96c16sfh1g7ln8537g7w-magpie-cli-0.1.4646...
+magpie-cli> patchelf: cannot find section '.dynamic'. The input file is most likely statically linked
+magpie-cli> patching script interpreter paths in /nix/store/h5p9hxc490cn96c16sfh1g7ln8537g7w-magpie-cli-0.1.4646
+magpie-cli> stripping (with command strip and flags -S -p) in /nix/store/h5p9hxc490cn96c16sfh1g7ln8537g7w-magpie-cli-0.1.4646/bin
+magpie-cli> Running phase: installCheckPhase
+magpie-cli> Executing versionCheckPhase
+magpie-cli> Successfully managed to find version 0.1.4646 in the output of the command /nix/store/h5p9hxc490cn96c16sfh1g7ln8537g7w-magpie-cli-0.1.4646/bin/magpie --version
+magpie-cli> magpie 0.1.4646
+magpie-cli> Finished versionCheckPhase
+magpie-cli> no Makefile or custom installCheckPhase, doing nothing
+/nix/store/cimd075h15nk5bmwdn8z02a5i6qfilyh-magpie-0.1.4646
+/nix/store/h5p9hxc490cn96c16sfh1g7ln8537g7w-magpie-cli-0.1.4646
+Pushing /nix/store/shlvnwzql604b6ppq3blsqwb4r5ij1ay-magpie-cli-0.1.4646-go-modules (178.01 MiB)
+Pushing /nix/store/cimd075h15nk5bmwdn8z02a5i6qfilyh-magpie-0.1.4646 (104.50 MiB)
+Pushing /nix/store/h5p9hxc490cn96c16sfh1g7ln8537g7w-magpie-cli-0.1.4646 (101.92 MiB)
