@@ -253,12 +253,17 @@ Each push is bounded by a ten-second timeout. A connection that is blackholed mu
 block the sampler: the manual run's last successful push was 47 minutes before the VM
 disappeared while the build was still running, which is the shape of a stuck `git push`,
 not of a dead sampler. Samples keep accumulating locally while pushes fail and go out in
-one batch when the network returns.
+one batch when the network returns. Each failed attempt appends a timestamped
+`[probe] ... push failed` line to `stages.txt` instead of only printing it: the step log
+is gone with the VM, so a line that arrives with a later batch is proof that the machine
+was alive and sampling while it could not reach GitHub.
 
 Read it as a fork, not as a graph. Samples that stop while memory is flat mean the VM was
 reclaimed, and no package change will help. Memory pinned near the limit with `rustc` or
 `ld.lld` on top means the build really is the cause. A `systemd-oomd` kill explains why
 adding swap changed nothing: oomd acts on pressure, and pressure rises while swapping.
+`[probe] ... push failed` lines mean the VM outlived its network, and the timestamps say
+for how long.
 
 The baseline is a build input, not a branch that has to follow `nixos-unstable` every
 hour. There is no separate baseline updater: a successful package update carries the

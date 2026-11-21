@@ -262,17 +262,23 @@ jobs:
               git -C "$probe_dir" add -A >/dev/null 2>&1 || return 0
               git -C "$probe_dir" -c user.name=ci-probe -c user.email=ci-probe@invalid \
                 commit -qm "probe $(date -u +%H:%M:%SZ)" 2>/dev/null || return 0
-              # 一次网络抖动就丢一个窗口的现场，重试几次；仍然失败才记一行（那行
-              # 本身也只在步骤日志里，机器被回收时同样看不到）。必须带 timeout：
-              # 连接被黑洞住时 git push 会一直等，采样循环就停在这里，后面的
-              # 样本一个都写不出去 —— 手动 run 在死前 47 分钟没有推送，就是
-              # 这个形状。超时后继续采样，网络回来时一次把积压的样本推上去。
+              # 一次网络抖动就丢一个窗口的现场，重试几次。必须带 timeout：连接被
+              # 黑洞住时 git push 会一直等，采样循环就停在这里，后面的样本一个都
+              # 写不出去 —— 手动 run 在死前 47 分钟没有推送，就是这个形状。超时后
+              # 继续采样，网络回来时一次把积压的样本推上去。
+              #
+              # 失败要写进 stages.txt，不能只打 stdout：那行落在步骤日志里，而日志
+              # 跟着被回收的机器一起 404（BlobNotFound）。写进文件后，下一次成功
+              # 推送会把它带上来，于是「机器活着但推不出去」和「机器没了」分得开
+              # 了 —— 这正是 16:37:27 之后那 47 分钟空白没能回答的问题。
               for attempt in 1 2; do
                 timeout 10 git -C "$probe_dir" push -q --force origin \
                   "HEAD:refs/heads/$probe_ref" 2>/dev/null && return 0
+                printf '[probe] %s push failed (attempt %s)\n' \
+                  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$attempt" \
+                  | tee -a "$probe_dir/stages.txt"
                 sleep 2
               done
-              printf '[probe] push failed\n'
             ) 9>"$probe_lock"
           }
 
