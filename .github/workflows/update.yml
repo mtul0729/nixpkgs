@@ -796,11 +796,24 @@ jobs:
             if ! verify "${group[@]}" 2>&1 | tee "$build_log"; then
               # 环境失败不是候选的属性：换一台 runner 就可能过。打成 ci-failed
               # 会把这个版本永久钉住，只能等人删 tag；这种只跳过这一轮。
+              env_title=""
+              env_detail=""
               if grep -qi 'No space left on device' "$build_log"; then
-                echo "::warning::$BRANCH: $pkg $new 构建时 runner 磁盘写满（环境问题），下一轮重试"
+                env_title="构建环境磁盘写满"
+                env_detail="把 runner 的磁盘写满了"
                 df -h /
-                notify "$BRANCH: $pkg 构建环境磁盘写满" \
-                  "\`$pkg\` $old -> $new 在构建时把 runner 的磁盘写满了。这是构建环境的问题，不是候选的问题：没有打 \`ci-failed\`，下一轮会在新的 runner 上重试。" \
+              elif grep -qiE \
+                'exit (code|status) 137|SIGKILL|signal: killed|(^|[^[:alnum:]_])Killed([^[:alnum:]_]|$)' \
+                "$build_log"; then
+                # 托管 runner 内存耗尽时通常直接 SIGKILL，Nix 只留下 exit 137；
+                # 这不是候选代码的编译错误。
+                env_title="构建进程被杀死"
+                env_detail="被 runner 的信号杀死了"
+              fi
+              if [ -n "$env_title" ]; then
+                echo "::warning::$BRANCH: $pkg $new $env_title（环境问题），下一轮重试"
+                notify "$BRANCH: $pkg $env_title" \
+                  "\`$pkg\` $old -> $new 在构建时$env_detail。这是构建环境的问题，不是候选的问题：没有打 \`ci-failed\`，下一轮会在新的 runner 上重试。" \
                   "$BRANCH: $pkg"
                 git reset -q --hard "$before"
                 continue
