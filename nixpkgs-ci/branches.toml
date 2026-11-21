@@ -75,6 +75,3 @@ name = "pkg/disktree"
 
 [[branch]]
 name = "pkg/helix-fcitx-focus"
-
-[[branch]]
-name = "pkg/codex"

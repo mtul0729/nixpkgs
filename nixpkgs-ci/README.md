@@ -304,7 +304,7 @@ leaves the hash describing the previous source. Ordering is not enough when the 
 a full commit SHA: 1.16.0 still compares that SHA with the feed's tag, finds a difference,
 and replaces the literal SHA with the tag text wherever it appears -- which is how a
 `buildCommit` ends up holding `rust-vX`. Pin the tag in `rev` and keep the commit in its
-own field, as `pkgs/by-name/co/codex` does.
+own field.
 
 Two failures are treated as the runner's environment rather than the candidate's: the
 runner running out of disk (`No space left on device`), and the build being killed by a
