@@ -303,6 +303,13 @@ and replaces the literal SHA with the tag text wherever it appears -- which is h
 `buildCommit` ends up holding `rust-vX`. Pin the tag in `rev` and keep the commit in its
 own field, as `pkgs/by-name/co/codex` does.
 
+Two failures are treated as the runner's environment rather than the candidate's: the
+runner running out of disk (`No space left on device`), and the build being killed by a
+signal (`exit code 137`, `Killed` or `SIGKILL`, which on a hosted runner usually means
+the VM hit its memory limit). Those legs notify and skip the round without creating a
+`ci-failed` tag, because a different runner can succeed. Every other build failure is a
+candidate failure.
+
 If the build fails, nothing is committed. The leg pushes a
 `ci-failed/<branch>/<pkg>/<content-hash>` tag; the hash covers the unit's versions and the
 union of their definition directories' effective diffs from upstream, not the baseline
