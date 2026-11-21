@@ -56,6 +56,8 @@ on:
 
 permissions:
   contents: write
+  # 清理 ci-probe 分支时要按 run 的创建时间判断保留哪些；只要读 run 列表。
+  actions: read
   # 包推不动的时候要在 fork 上开/更新 issue —— 日志里的 annotation 通知不到任何
   # 人（job 还是绿的，GitHub 不发邮件），issue 是这条腿上唯一能说话的通道。
   issues: write
@@ -78,6 +80,65 @@ jobs:
           path: fork
           sparse-checkout: nixpkgs-ci
           sparse-checkout-cone-mode: false
+
+      # 探针分支是事故现场，不是长期状态。按 run 的创建时间保留最近 72 小时，
+      # 之后每轮自动删掉；死掉的 runner 留下的证据能读三天，又不会无限堆积。
+      # 清理失败只警告，不能让取证代码挡住真正的升级。
+      - name: Prune old probe branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          since=$(date -u -d '72 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          recent=$(mktemp)
+          if ! timeout 60 gh api --paginate \
+            "repos/$FORK/actions/workflows/update.yml/runs?per_page=100&created=%3E%3D${since}" \
+            --jq '.workflow_runs[].id' > "$recent"; then
+            echo "::warning::查不到最近的 update run，跳过探针分支清理"
+            rm -f "$recent"
+            exit 0
+          fi
+          if [ ! -s "$recent" ]; then
+            echo "::warning::最近 72 小时没有 update run，跳过探针分支清理"
+            rm -f "$recent"
+            exit 0
+          fi
+
+          declare -A KEEP=()
+          while IFS= read -r run; do
+            KEEP["$run"]=1
+          done < "$recent"
+          rm -f "$recent"
+
+          mapfile -t refs < <(
+            timeout 30 git ls-remote --heads "https://github.com/$FORK.git" \
+              'refs/heads/ci-probe/*' | awk '{print $2}'
+          )
+
+          doomed=()
+          kept=0
+          for ref in "${refs[@]}"; do
+            rest=${ref#refs/heads/ci-probe/}
+            run=${rest%%/*}
+            # 旧的平分支没有 run id，本来就无法和新的 <run-id>/<branch> 共存；
+            # 没有对应 run 的分支已经无法再解释，跟着一起清掉。
+            if [[ "$run" =~ ^[0-9]+$ ]] && [[ -n "${KEEP[$run]:-}" ]]; then
+              kept=$((kept + 1))
+              continue
+            fi
+            doomed+=("$ref")
+          done
+
+          echo "probe branches: keep $kept, prune ${#doomed[@]}"
+          if [ ${#doomed[@]} -eq 0 ]; then
+            exit 0
+          fi
+          printf '  %s\n' "${doomed[@]}"
+          if ! timeout 120 git push \
+            "https://x-access-token:${GH_TOKEN}@github.com/$FORK.git" \
+            --delete "${doomed[@]}"; then
+            echo "::warning::探针分支清理失败，下一轮再试"
+          fi
 
       - id: plan
         env:

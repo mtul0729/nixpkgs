@@ -250,8 +250,11 @@ a reclaimed VM never reaches. The same sample reads the unit's `memory.events` a
 `memory.swap.events` -- an `oom_kill` count above zero is the direct answer to "did it hit
 the limit" -- and `memory.pressure`, whose `full avg` shows the stall that follows when it
 did not. The branches are throwaway evidence, deleted with
-`git push origin :refs/heads/ci-probe/<run-id>/<branch>` once the question is answered;
-`ci-probe/*` triggers no workflow.
+`git push origin :refs/heads/ci-probe/<run-id>/<branch>` once the question is answered.
+The `plan` job of every run also prunes every `ci-probe/` branch whose run is older than
+72 hours, so a dead runner's evidence stays readable for three days without accumulating
+forever; the same sweep removes the old flat `ci-probe/<branch>` refs. `ci-probe/*`
+triggers no workflow.
 
 Each push is bounded by a ten-second timeout. A connection that is blackholed must not
 block the sampler: the manual run's last successful push was 47 minutes before the VM
