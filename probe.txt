@@ -1,2 +1,3 @@
 [resmon] +12s 12:21:36 mem=1118/15701MB swap=0/19455MB load=2.33 0.80 0.28 top=199MB:Runner.Worker,98MB:provjobd3949989,95MB:Runner.Listener root=68G free, 54% used build=
 [resmon] +23s 12:21:47 mem=1792/15701MB swap=0/19455MB load=2.27 0.84 0.30 top=353MB:nix-shell,200MB:Runner.Worker,98MB:provjobd3949989 root=67G free, 54% used build=
+[resmon] +34s 12:21:58 mem=1726/15701MB swap=0/19455MB load=1.99 0.82 0.30 top=200MB:Runner.Worker,110MB:nix-build,100MB:provjobd3949989 root=65G free, 55% used build=
