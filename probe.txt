@@ -7,3 +7,4 @@
 [resmon] +78s 06:25:04 mem=2104/15983MB swap=0/19455MB load=1.89 0.90 0.35 top=451MB:nix-build,136MB:Runner.Worker,106MB:provjobd3492319 root=61G free, 59% used build=  /nix/store/dlksx1080qkdaxwg2k6bzdva8gk7vn8v-xdg-utils-1.2.1
 [resmon] +89s 06:25:15 mem=2297/15983MB swap=0/19455MB load=2.53 1.07 0.41 top=451MB:nix-build,251MB:nix-daemon,136MB:Runner.Worker root=59G free, 60% used build=magpie-cli> go: downloading github.com/go-openapi/jsonreference v0.21.3
 [resmon] +101s 06:25:27 mem=2209/15983MB swap=0/19455MB load=4.18 1.50 0.57 top=451MB:nix-build,136MB:Runner.Worker,106MB:provjobd3492319 root=60G free, 60% used build=magpie-cli> Running phase: installPhase
+[resmon] +112s 06:25:38 mem=2435/15983MB swap=0/19455MB load=5.96 1.97 0.73 top=451MB:nix-build,139MB:cachix,136MB:Runner.Worker root=59G free, 60% used build=magpie-cli> Building subPackage ./.
