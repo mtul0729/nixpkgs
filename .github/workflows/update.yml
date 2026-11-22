@@ -81,10 +81,10 @@ jobs:
           sparse-checkout: nixpkgs-ci
           sparse-checkout-cone-mode: false
 
-      # 探针分支是事故现场，不是长期状态。按 run 的创建时间保留最近 72 小时，
-      # 之后每轮自动删掉；死掉的 runner 留下的证据能读三天，又不会无限堆积。
-      # 清理失败只警告，不能让取证代码挡住真正的升级。
-      - name: Prune old probe branches
+      # 探针分支是事故现场，不是长期状态。只有没跑成功的 run（失败、取消、
+      # 还在跑）需要留着取证，按创建时间保留最近 72 小时；成功的 run 下一轮就
+      # 清掉。清理失败只警告，不能让取证代码挡住真正的升级。
+      - name: Prune probe branches
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -93,13 +93,8 @@ jobs:
           recent=$(mktemp)
           if ! timeout 60 gh api --paginate \
             "repos/$FORK/actions/workflows/update.yml/runs?per_page=100&created=%3E%3D${since}" \
-            --jq '.workflow_runs[].id' > "$recent"; then
+            --jq '.workflow_runs[] | select(.conclusion != "success") | .id' > "$recent"; then
             echo "::warning::查不到最近的 update run，跳过探针分支清理"
-            rm -f "$recent"
-            exit 0
-          fi
-          if [ ! -s "$recent" ]; then
-            echo "::warning::最近 72 小时没有 update run，跳过探针分支清理"
             rm -f "$recent"
             exit 0
           fi
@@ -129,7 +124,7 @@ jobs:
             doomed+=("$ref")
           done
 
-          echo "probe branches: keep $kept, prune ${#doomed[@]}"
+          echo "probe branches: keep $kept (unfinished runs), prune ${#doomed[@]}"
           if [ ${#doomed[@]} -eq 0 ]; then
             exit 0
           fi

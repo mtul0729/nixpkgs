@@ -251,8 +251,10 @@ a reclaimed VM never reaches. The same sample reads the unit's `memory.events` a
 the limit" -- and `memory.pressure`, whose `full avg` shows the stall that follows when it
 did not. The branches are throwaway evidence, deleted with
 `git push origin :refs/heads/ci-probe/<run-id>/<branch>` once the question is answered.
-The `plan` job of every run also prunes every `ci-probe/` branch whose run is older than
-72 hours, so a dead runner's evidence stays readable for three days without accumulating
+The `plan` job of every run prunes every `ci-probe/` branch belonging to a run that
+succeeded -- a run that finished has nothing left to diagnose -- as well as every branch
+whose run is older than 72 hours. A failed, cancelled or still-running run is the case the
+probes exist for, so its evidence stays readable for three days without accumulating
 forever; the same sweep removes the old flat `ci-probe/<branch>` refs. `ci-probe/*`
 triggers no workflow.
 
