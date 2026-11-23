@@ -255,13 +255,13 @@ git push --force-with-lease=refs/heads/<branch>:<old sha> \
   branch must meet upstream's test requirements.
 - **Never turn a `pkg/*` branch into the PR branch** — not by pushing it as-is, not by
   rebasing it onto `upstream/master`. Build a copy (see *Talking to upstream*).
-- **Do not shrink a closure by overriding a dependency's build options.** A variant
-  that no other package consumes gets no shared cache entry: it is a separate full
-  source build of that dependency, repeated whenever the dependency changes, and on
-  platforms Hydra does not build every user compiles it. ~170 MiB did not justify a
-  source build of onnxruntime for siyuan's OCR (NixOS/nixpkgs#576868); the upstream
-  review asked for the override to be dropped for exactly that reason. Override an
-  option when it is wrong for the package, never for the size of its closure.
+- **Do not override a dependency's build options only to shrink the closure.** A
+  variant no other package consumes cannot share the cached derivation, so it is a
+  separate full source build of that dependency, repeated on every dependency
+  update and compiled locally wherever Hydra has no cache. ~170 MiB did not
+  justify building onnxruntime from source for siyuan's OCR
+  (NixOS/nixpkgs#576868). Use the default whenever it builds and works; override
+  only when it cannot, and say what fails without it.
 
 ## Changing a package's shape is the last resort
 
