@@ -129,7 +129,9 @@ jobs:
             exit 0
           fi
           printf '  %s\n' "${doomed[@]}"
-          if ! timeout 120 git push \
+          # The plan job's working directory is the workspace, not the checkout:
+          # `git ls-remote` works there, `git push` needs a repository.
+          if ! timeout 120 git -C fork push \
             "https://x-access-token:${GH_TOKEN}@github.com/$FORK.git" \
             --delete "${doomed[@]}"; then
             echo "::warning::探针分支清理失败，下一轮再试"
