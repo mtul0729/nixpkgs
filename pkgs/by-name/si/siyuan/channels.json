@@ -1,0 +1,16 @@
+{
+  "stable": {
+    "version": "3.8.12",
+    "src": "sha256-pEvpq/kohY94SDGw8oVAXoHDPxnyaPcV1M644psiY/o=",
+    "vendorHash": "sha256-KNeqEDMcyLJBQpVwtvTI1B32/BaLpMPyRKdCvmcbuZ8=",
+    "pnpmDeps": "sha256-GjJmx1uyhTpY5DmxGh9mMNLsXUsZpH68074CB6nIEF8=",
+    "ocrAssets": "ocr-assets.json"
+  },
+  "preview": {
+    "version": "3.8.12",
+    "src": "sha256-pEvpq/kohY94SDGw8oVAXoHDPxnyaPcV1M644psiY/o=",
+    "vendorHash": "sha256-KNeqEDMcyLJBQpVwtvTI1B32/BaLpMPyRKdCvmcbuZ8=",
+    "pnpmDeps": "sha256-GjJmx1uyhTpY5DmxGh9mMNLsXUsZpH68074CB6nIEF8=",
+    "ocrAssets": "ocr-assets-preview.json"
+  }
+}
