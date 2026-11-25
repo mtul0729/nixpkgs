@@ -19,7 +19,7 @@
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "disktree";
-  version = "0.11.0";
+  version = "1.0.0";
 
   strictDeps = true;
   __structuredAttrs = true;
@@ -28,10 +28,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     owner = "tobi";
     repo = "disktree";
     rev = "v${finalAttrs.version}";
-    hash = "sha256-b7VP3VgOS+zUTR2bhOh6JNcN5mIIeHL/fe3u/eHC+X4=";
+    hash = "sha256-NXX4XPGIrVFfKEO9uQMlCKyLqRSFh2JXcvjLhaQmgcw=";
   };
 
-  cargoHash = "sha256-k+iLvOS+6o5oC+JcG9BJ3UUAzZAQpcpNelKCXsDx0Fw=";
+  cargoHash = "sha256-si9d+0sNZZwz91tmWBrnhL2Lkhy25G2o/kIvTobG09M=";
 
   nativeBuildInputs = [
     pkg-config
