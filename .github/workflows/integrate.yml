@@ -115,11 +115,42 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Squash the branches onto upstream
+        env:
+          TOKEN: ${{ secrets.PUSH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           cd nixpkgs
           git config user.name "myul"
           git config user.email "hdx0729@gmail.com"
+
+          # 目录树里缺的 blob 由 promisor remote 按需补取。GitHub 对匿名请求
+          # 会回 403 —— 2026-11-25 那次就是这样在最后的 checkout 上 exit 128。
+          # 只给 fork 的 URL 带 token，upstream 保持匿名：PUSH_TOKEN 可能只对
+          # 这个仓库有权限，拿它去访问 NixOS/nixpkgs 反而会从能读变成 403。
+          # 用 GIT_CONFIG_* 而不是写 .git/config，口令不该留在被复用的 cache 里。
+          if [ -n "${TOKEN:-}" ]; then
+            header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+            export GIT_CONFIG_COUNT=1
+            export GIT_CONFIG_KEY_0="http.https://github.com/$FORK/.extraheader"
+            export GIT_CONFIG_VALUE_0="$header"
+          fi
+
+          # 取对象失败是传输问题，重试有意义；git 自己的 0/1（1 = 冲突）是
+          # 结论，重试只会白等。
+          retry_git() {
+            local attempt rc
+            attempt=1
+            while :; do
+              rc=0
+              "$@" || rc=$?
+              if [ "$rc" -le 1 ] || [ "$attempt" -ge 3 ]; then
+                return "$rc"
+              fi
+              echo "::warning::git $1 退出码 $rc，第 $attempt 次重试" >&2
+              sleep $((attempt * 10))
+              attempt=$((attempt + 1))
+            done
+          }
 
           # One [[branch]] table per branch. Top-level `attrs` and every
           # `[[branch.unit]]`'s attrs name packages the branch carries; a
@@ -154,12 +185,12 @@ jobs:
             || git remote set-url fork "https://github.com/$FORK"
           git config remote.fork.promisor true
           git config remote.fork.partialclonefilter blob:none
-          git fetch --no-tags --filter=blob:none fork "${refspecs[@]}"
+          retry_git git fetch --no-tags --filter=blob:none fork "${refspecs[@]}"
 
           # merge-tree 和最后的 checkout 只按需取缺少的 blobs。
           git config extensions.partialClone fork
 
-          git checkout -q -B "$INTEGRATION" "origin/$UPSTREAM_BRANCH"
+          retry_git git checkout -q -B "$INTEGRATION" "origin/$UPSTREAM_BRANCH"
           integration_tip=$(git rev-parse HEAD)
           failed=()
           merged=()
@@ -171,8 +202,10 @@ jobs:
             # source branch keeps its history; integration is generated and force-
             # pushed anyway, so checking out 134 magpie updates buys consumers
             # nothing and costs minutes.
-            if merge_out=$(git merge-tree --write-tree --messages \
-              --merge-base="$base" "$integration_tip" "$branch_tip"); then
+            rc=0
+            merge_out=$(retry_git git merge-tree --write-tree --messages \
+              --merge-base="$base" "$integration_tip" "$branch_tip") || rc=$?
+            if [ "$rc" -eq 0 ]; then
               tree=$(printf '%s\n' "$merge_out" \
                 | awk '/^[0-9a-f]+$/ && (length($0) == 40 || length($0) == 64) {
                     print; exit
@@ -191,17 +224,23 @@ jobs:
                   -m "Source: $b at $branch_tip")
               fi
               merged+=("$b")
-            else
+            elif [ "$rc" -eq 1 ]; then
               printf '%s\n' "$merge_out"
               failed+=("$b")
               echo "::warning::$b 与当前 integration 冲突，这次先跳过它"
+            else
+              # 128 之类是取不到对象/读不了树，和冲突是两回事。当成冲突处理
+              # 会让这个分支从 integration 里静默消失，所以整轮中止。
+              printf '%s\n' "$merge_out"
+              echo "::error::$b: merge-tree 失败（退出码 $rc），这不是冲突"
+              exit 1
             fi
             echo "::endgroup::"
           done
 
           # Update the working tree once, after all merges. The ref is pushed
           # later, only after every attribute below has built.
-          git checkout -q -B "$INTEGRATION" "$integration_tip"
+          retry_git git checkout -q -B "$INTEGRATION" "$integration_tip"
           git log --oneline "origin/$UPSTREAM_BRANCH..HEAD"
 
           # 合进来的分支各自声明了哪些属性。两部分取并：by-name 目录名（目录名即属性名，

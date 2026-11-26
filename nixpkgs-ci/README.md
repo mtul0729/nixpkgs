@@ -384,6 +384,16 @@ lazily fetch only the blobs they need. Fetching those refs without a filter make
 reconcile the upstream cache against the fork's complete trees and can spend minutes
 transferring almost no data.
 
+Those lazy fetches are the step's weak point. GitHub answers unauthenticated ones with
+a 403 (2026-11-25: `could not fetch ... from promisor remote`, exit 128 at the final
+checkout), so the fork URL carries `PUSH_TOKEN` in a step-local `extraheader` and
+transport failures are retried. The header is scoped to the fork on purpose: the PAT may
+not be able to read `NixOS/nixpkgs`, and an unusable credential turns a working anonymous
+fetch into a 403. Only `merge-tree`'s exit status 1 means a real conflict, and only that
+skips a branch with a warning; any other failure aborts the run, because letting a fetch
+failure look like a conflict would publish `integration` without that branch and say
+nothing more than a warning.
+
 It has no schedule of its own: `update` runs hourly, so its completion is the signal,
 and a second hourly cron only repeated the same integration work and build minutes later.
 The cost is that a skipped or delayed `update` run delays `integration` by that much.
