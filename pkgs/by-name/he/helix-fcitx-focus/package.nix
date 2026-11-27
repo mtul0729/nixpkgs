@@ -2,7 +2,7 @@
   lib,
   rustPlatform,
   fetchFromGitHub,
-  nix-update-script,
+  unstableGitUpdater,
 }:
 
 rustPlatform.buildRustPackage {
@@ -38,7 +38,7 @@ rustPlatform.buildRustPackage {
     runHook postInstall
   '';
 
-  passthru.updateScript = nix-update-script { extraArgs = [ "--version=branch=main" ]; };
+  passthru.updateScript = unstableGitUpdater { hardcodeZeroVersion = true; };
 
   meta = {
     description = "Steel plugin that keeps fcitx5 in English outside Helix insert mode";
