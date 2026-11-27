@@ -164,12 +164,9 @@ git log --format='%h %an <%ae>' upstream/master..HEAD
   false -A <attr>.drvPath`. A package that needs IFD is silently dropped by `nixpkgs-review` and
   never reaches the cache.
 - Build it, and run the binaries from `./result/bin`, with sandboxing enabled.
-- Dependent packages and the other platforms: `gh workflow run review.yml -R
-  mtul0729/nixpkgs-review-gha -f pr=<n>`, limited to what `meta.platforms` claims.
-- **Read the comment it posts, not the run's status.** The workflow goes green even when a package
-  fails to build: the result lives in the `nixpkgs-review` comment on the PR, and a green check
-  only means the workflow finished. A dependency can also be the thing that fails — check which
-  derivation the error names before blaming the package.
+- Dependent packages and the other platforms are covered after the PR exists — see
+  [*Review it with nixpkgs-review-gha*](#review-it-with-nixpkgs-review-gha). Local work stops at
+  the package itself.
 - If something does not build, leave the branch alone and report it. Never disable a check to
   make CI green.
 
@@ -215,6 +212,31 @@ checked, and an unticked box is information for the reviewer, not a failure. It 
 sentence belongs in the body for that tick to be true.
 
 Link related issues, and leave it draft until the human has reviewed it.
+
+### Review it with nixpkgs-review-gha
+
+Every PR is reviewed by the fork's runner before it is marked ready, and reviewed again after
+each push. OfBorg builds the same change, but its queue is not ours to schedule, and this is the
+only place the package gets built natively on aarch64. The runner is the fork of
+[`Defelo/nixpkgs-review-gha`](https://github.com/Defelo/nixpkgs-review-gha) at
+`mtul0729/nixpkgs-review-gha`; its `review` workflow is the entry point.
+
+```bash
+gh workflow run review.yml -R mtul0729/nixpkgs-review-gha -f pr=<n>
+```
+
+- It takes the PR number, so it runs after `gh pr create`, not before the push. Re-running it on
+  the same PR reviews the current head.
+- The defaults are what a package PR usually wants: `x86_64-linux` and `aarch64-linux`,
+  `allow-unfree`, result posted back by `@nixpkgs-review-gha`. Turn off the systems
+  `meta.platforms` does not claim (`-f x86_64-darwin=no -f aarch64-darwin=no`) rather than argue
+  about a failure there.
+- **Read the comment it posts, not the run's status.** The workflow goes green even when a package
+  fails to build: the result lives in the `nixpkgs-review` comment on the PR, and a green check
+  only means the workflow finished. A dependency can also be the thing that fails — check which
+  derivation the error names before blaming the package.
+- A failure is handled like a local one: fix it, re-run, never disable a check to get green. A PR
+  whose comment has not reported the package built is not ready, whatever the other checks say.
 
 ### While it waits
 
