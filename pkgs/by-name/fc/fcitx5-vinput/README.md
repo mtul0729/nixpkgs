@@ -36,7 +36,22 @@ by itself and leaves the fork-only ones.
 
 ## When the next release lands
 
-Upstream `main` replaced PipeWire capture with PulseAudio (upstream PR `#796`),
-but `v2.4.2` still links `libpipewire-0.3` from `src/gui`. The
+Upstream `main` dropped the native PipeWire capture backend and the `wpctl`
+output-ducking call in favour of a single libpulse client (issue `#796`, PR
+`#801`). It is not a step away from PipeWire: `libpulse` speaks the PulseAudio
+protocol to `pipewire-pulse`, PipeWire's own drop-in server, which translates
+to the PipeWire graph. One client then covers both PulseAudio desktops and
+PipeWire ones, at the cost of the PulseAudio module surface (`module-*`,
+tunnels) and of hosts running bare PipeWire without the compat socket.
+
+The reason is the target environment: Kylin V10 SP1, UOS V20, Deepin 20.9 and
+Debian 11 ship only PulseAudio, and the native path was already broken on
+PipeWire 0.3.48 (issue `#169`). A runtime fallback was rejected because a
+Wayland session with screen sharing runs an empty `pipewire` daemon with no
+audio nodes, so a successful `pw_context_connect` enumerates zero devices and
+detection cannot fall back.
+
+`v2.4.2` still links `libpipewire-0.3` from `src/gui/CMakeLists.txt`. The
 package matches the release; the first tag after that change needs
-`libpulse` in `buildInputs` in place of `pipewire`.
+`libpulseaudio` in `buildInputs` in place of `pipewire` (upstream's `flake.nix`
+already uses it, `cmake/Dependencies.cmake` asks pkg-config for `libpulse`).
