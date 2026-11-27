@@ -339,9 +339,14 @@ step exists because `pr/*` is cut from `upstream/master`, whose tip is not an an
 upstream-bound commit is therefore *the PR's diff on the current `nixos-unstable`*, not the PR
 commit object.
 
-A conflict means upstream changed a line this directory also changes; resolve it in the fork-only
-commit. Do not re-derive the fork's content by hand, and do not edit the PR copy to match: what
-should go upstream moves there as its own PR, and is a human decision.
+The release notes are the usual conflict on that step: the PR adds its line to the cycle file as
+that file stands on `upstream/master`, and on `nixos-unstable` the same file is often still the
+skeleton the PR was written against. Keep the branch's version of the file and put the line back
+under the heading it belongs to; nothing else in the PR should need hand work.
+
+A conflict in the rebase means upstream changed a line this directory also changes; resolve it in
+the fork-only commit. Do not re-derive the fork's content by hand, and do not edit the PR copy to
+match: what should go upstream moves there as its own PR, and is a human decision.
 
 When the PR merges, the upstream-bound commits drop out on their own — `git rebase` skips a commit
 whose patch is already upstream:
