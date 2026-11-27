@@ -216,8 +216,9 @@ Link related issues, and leave it draft until the human has reviewed it.
 ### Review it with nixpkgs-review-gha
 
 Every PR is reviewed by the fork's runner before it is marked ready, and reviewed again after
-each push. OfBorg builds the same change, but its queue is not ours to schedule, and this is the
-only place the package gets built natively on aarch64. The runner is the fork of
+each push. OfBorg builds the same change too, but its queue is not ours to schedule and its report
+is written for reviewers; this is the run we can start ourselves and read before asking anyone to
+look. The runner is the fork of
 [`Defelo/nixpkgs-review-gha`](https://github.com/Defelo/nixpkgs-review-gha) at
 `mtul0729/nixpkgs-review-gha`; its `review` workflow is the entry point.
 
