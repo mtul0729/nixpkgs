@@ -308,3 +308,65 @@ When the question is whether to adopt a change someone else proposed, not whethe
 - **Clean up when the decision is made.** Branch, `branches.toml` table, worktree, build output.
   Keep `notes/<pkg>-<pr>.md` only when a future reader would otherwise have to repeat the
   evaluation.
+
+## 6. Keeping `pkg/` in step with its PR
+
+A package that is both shipped from the fork and proposed upstream has one source of truth per
+audience. Keep them related by history rather than by hand:
+
+- **upstream-bound commits** — the content the PR carries, as the first commits on the branch;
+- **fork-only commits** — what nixpkgs will not take, on top of them.
+
+`pr/<pkg>-<ver>` is a copy of the first group (see [*Build the copy*](#build-the-copy)); the
+second group is why the two branches differ at all. Apply the shape when the branch has to keep
+following an open PR — not for a one-off extraction, where a single commit is simpler, and not
+when the fork and the PR are the same content, where it collapses to that one commit.
+
+It pays on every review fix and version bump. Sync is a rebase of the fork-only commits, so the
+upstream-bound content is never re-derived by hand and never edited twice:
+
+```bash
+git fetch upstream
+git switch -c tmp/<pkg>-pr upstream/nixos-unstable
+git cherry-pick <the PR's commits>                      # PR content against CI's base
+git rebase --onto tmp/<pkg>-pr <old upstream-bound tip> pkg/<pkg>
+```
+
+Cherry-pick the range, not the PR tip, for the reason in [*Build the copy*](#build-the-copy). The
+step exists because `pr/*` is cut from `upstream/master`, whose tip is not an ancestor of
+`nixos-unstable`: using it as the base drags everything master is ahead by into the branch diff —
+1382 `package.nix` files when this was written — and CI then believes the branch owns them. The
+upstream-bound commit is therefore *the PR's diff on the current `nixos-unstable`*, not the PR
+commit object.
+
+A conflict means upstream changed a line this directory also changes; resolve it in the fork-only
+commit. Do not re-derive the fork's content by hand, and do not edit the PR copy to match: what
+should go upstream moves there as its own PR, and is a human decision.
+
+When the PR merges, the upstream-bound commits drop out on their own — `git rebase` skips a commit
+whose patch is already upstream:
+
+```bash
+git fetch upstream
+git switch pkg/<pkg>
+git rebase upstream/nixos-unstable
+git log --oneline upstream/nixos-unstable..pkg/<pkg>    # only the fork-only commits
+```
+
+If the merged version differs from what was carried, the commit will not drop out: take upstream's
+version and delete ours rather than resolving in its favour line by line.
+
+Check before pushing:
+
+```bash
+git log --oneline upstream/nixos-unstable..pkg/<pkg>    # the expected commits, nothing else
+git diff <pr tip>...pkg/<pkg>                           # exactly the fork-only delta
+base=$(git merge-base upstream/nixos-unstable pkg/<pkg>)
+git diff --name-only --diff-filter=AM "$base" pkg/<pkg> -- 'pkgs/by-name/*/*/package.nix'
+```
+
+The package's `README.md` records the split in prose — what is upstream-bound, what stays, and that
+it is deleted once the branch is only the delta; `pkgs/by-name/si/siyuan/README.md` and
+`pkgs/by-name/ma/magpie/README.md` are the two examples. Reshaping an existing branch needs no
+`ci-failed` cleanup: `integrate` squashes the branch, and the tag's content hash covers the
+package's effective diff, not the commit layout.
