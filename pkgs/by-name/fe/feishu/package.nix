@@ -177,10 +177,11 @@ stdenv.mkDerivation {
 
     # 7.72.23 no longer ships the bundled Vulcan browser, so only the main
     # executable needs to be wrapped.
-    # FIXME: Add back NIXOS_OZONE_WL support once upstream fixes the crash on native Wayland (see #318035)
+    # KWin and wlroots only implement text-input v3, which IMEs need.
     wrapProgram $out/opt/bytedance/feishu/feishu \
       --prefix XDG_DATA_DIRS    :  "$XDG_ICON_DIRS:$GSETTINGS_SCHEMAS_PATH" \
       --prefix LD_LIBRARY_PATH  :  ${rpath}:$out/opt/bytedance/feishu:${addDriverRunpath.driverLink}/share \
+      --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform-hint=auto --enable-wayland-ime=true --wayland-text-input-version=3}}" \
       ${lib.optionalString (commandLineArgs != "") "--add-flags ${lib.escapeShellArg commandLineArgs}"}
 
     mkdir -p $out/share/icons/hicolor
