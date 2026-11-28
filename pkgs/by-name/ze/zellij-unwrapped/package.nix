@@ -26,17 +26,17 @@
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "zellij-unwrapped";
-  version = "0.46.0";
+  version = "0.46.1";
   __structuredAttrs = true;
 
   src = fetchFromGitHub {
     owner = "zellij-org";
     repo = "zellij";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-JpSNWC6jHahirUmnWRZKiVRonFjjIZx9j0V//6t1+iM=";
+    hash = "sha256-sLH3ox4DY6JkrQAaI8IxnA7or1458gF4nEKBuPuQPI8=";
   };
 
-  cargoHash = "sha256-i3Vh7w9YeGUkGIsbqA2UIiLtMqsSC+/ehdSDIfTckM8=";
+  cargoHash = "sha256-qkXg4Vt+x3r1zka5htPtlO28B6bh+oiKGsinCdBASFA=";
 
   # Omit vendored_curl to link against libcurl from nixpkgs.
   buildNoDefaultFeatures = true;
