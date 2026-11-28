@@ -58,6 +58,14 @@ name = "pkg/activitywatch"
 [[branch.unit]]
 attrs = ["aw-server-rust", "aw-client-rust"]
 
+# 必须排在 pkg/fcitx5-vinput 前面：后者的本地 ASR 通过 callPackage 拿 sherpa-onnx，
+# 上游自己钉的是 2.0.1，而 nixos-unstable 只有 1.13.8。这里没有依赖声明，顺序就是
+# 全部机制 —— 两个 diff 叠进 integration 后才解析到 2.0.3。
+# 另外 cache 里的 FetchContent 依赖由手工维护，nix-update 只改 version/hash，
+# 上游增删依赖时要跟着改那一组 fetchurl。
+[[branch]]
+name = "pkg/sherpa-onnx"
+
 [[branch]]
 name = "pkg/fcitx5-vinput"
 
