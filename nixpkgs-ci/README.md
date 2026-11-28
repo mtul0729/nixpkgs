@@ -396,15 +396,16 @@ The source branches keep their full history. `integration` is a generated, force
 artifact, so replaying every update commit there provides no consumer value: `pkg/magpie`
 already spends minutes rebasing 134 update commits. The integration step instead uses
 `git merge-tree --write-tree --merge-base` once per branch and creates one commit with
-`git commit-tree`; the working tree is checked out only once at the end. A branch whose
-effective diff conflicts with the integration built so far is skipped and named in a
-warning; the step only fails when every branch was skipped, since then `integration` would
-be plain `nixos-unstable`. The usual cause is a branch whose baseline has not caught up
-with upstream yet, which `update` resolves on its next run. Fork refs are fetched with
-`blob:none` and the fork is a promisor remote, so `merge-tree` and the final checkout
-lazily fetch only the blobs they need. Fetching those refs without a filter makes Git
-reconcile the upstream cache against the fork's complete trees and can spend minutes
-transferring almost no data.
+`git commit-tree`; the working tree is checked out only once at the end. Publishing is
+all-or-nothing: a branch whose effective diff conflicts with the integration built so far
+aborts the run before anything is pushed, and `integration` stays at its previous rev.
+Skipping the branch would publish a tree missing a package a consumer may reference; the
+usual cause is a baseline that has not caught up with upstream yet, which `update`
+resolves on its next run, so waiting for that is better than shipping an incomplete set.
+Fork refs are fetched with `blob:none` and the fork is a promisor remote, so `merge-tree`
+and the final checkout lazily fetch only the blobs they need. Fetching those refs without
+a filter makes Git reconcile the upstream cache against the fork's complete trees and can
+spend minutes transferring almost no data.
 
 Those lazy fetches are the step's weak point. GitHub answers unauthenticated ones with
 a 403 (2026-11-25: `could not fetch ... from promisor remote`, exit 128 at the final
@@ -412,9 +413,8 @@ checkout), so the fork URL carries `PUSH_TOKEN` in a step-local `extraheader` an
 transport failures are retried. The header is scoped to the fork on purpose: the PAT may
 not be able to read `NixOS/nixpkgs`, and an unusable credential turns a working anonymous
 fetch into a 403. Only `merge-tree`'s exit status 1 means a real conflict, and only that
-skips a branch with a warning; any other failure aborts the run, because letting a fetch
-failure look like a conflict would publish `integration` without that branch and say
-nothing more than a warning.
+aborts the run with the branch named; any other failure aborts it too. Neither publishes
+`integration` without that branch, and a fetch failure is never mistaken for a conflict.
 
 It has no schedule of its own: `update` runs hourly, so its completion is the signal,
 and a second hourly cron only repeated the same integration work and build minutes later.

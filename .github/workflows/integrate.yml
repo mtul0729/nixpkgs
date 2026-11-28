@@ -8,6 +8,10 @@
 # 编不过就红。没变化时只是下载，几乎不花时间。全部构建通过后才把 integration
 # 指针移过去，所以分支 tip 一定是一个已经有缓存的 rev。
 #
+# integration 的发布是全有或全无：branches.toml 里任何一个分支合不进去，这一轮
+# 就中止并保留上一个 integration。跳过冲突分支会发布一棵缺包的树，而 sysadmin
+# 可能正引用那个包；冲突该由 update 的基线 rebase 去消解，不该由发布端静默吞掉。
+#
 # 触发：update 跑完自动接、手动。没有独立的定时排班——update 每小时都会跑，
 # 完成即接；再加一条 :43 只会在同一小时里把同样的合成和构建做第二遍。
 name: integrate
@@ -192,7 +196,6 @@ jobs:
 
           retry_git git checkout -q -B "$INTEGRATION" "origin/$UPSTREAM_BRANCH"
           integration_tip=$(git rev-parse HEAD)
-          failed=()
           merged=()
           for b in "${BRANCHES[@]}"; do
             echo "::group::$b"
@@ -226,8 +229,9 @@ jobs:
               merged+=("$b")
             elif [ "$rc" -eq 1 ]; then
               printf '%s\n' "$merge_out"
-              failed+=("$b")
-              echo "::warning::$b 与当前 integration 冲突，这次先跳过它"
+              echo "::error::$b 与当前 integration 冲突；不发布只含部分分支的 integration"
+              echo "::error::请等 update 消解 $b 的基线冲突，或手工修复后重跑"
+              exit 1
             else
               # 128 之类是取不到对象/读不了树，和冲突是两回事。当成冲突处理
               # 会让这个分支从 integration 里静默消失，所以整轮中止。
@@ -260,18 +264,6 @@ jobs:
           done
           sort -u "$RUNNER_TEMP/attrs.txt" -o "$RUNNER_TEMP/attrs.txt"
           echo "will build: $(tr '\n' ' ' < "$RUNNER_TEMP/attrs.txt")"
-
-          # 一个分支没合进来不把整条链染红：其余分支照常构建、照常推进。
-          # 这类冲突多半是分支基线还没跟上上游，update 会先在 rebase 时自动
-          # 消解；没消解掉的由那一轮开 issue，这里只留 warning。但一个都没合
-          # 进来时 integration 等于退化成纯 upstream，那是真事故。
-          if [ ${#failed[@]} -gt 0 ]; then
-            echo "::warning::以下分支没能合并，integration 里暂时没有它们：${failed[*]}"
-            if [ ${#merged[@]} -eq 0 ]; then
-              echo "::error::一个分支都没合进来，integration 只剩 upstream"
-              exit 1
-            fi
-          fi
 
       # 漂移检查：分支各自验证时用的是自己的 base，这里是今天的 unstable。
       # drv 没变就是纯下载；变了说明上游动了依赖，必须能编过。
