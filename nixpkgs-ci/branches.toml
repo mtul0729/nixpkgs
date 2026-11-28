@@ -86,5 +86,7 @@ name = "pkg/disktree"
 name = "pkg/helix-fcitx-focus"
 
 # zellij-unwrapped 带一个宽字符光标补丁；上游发布含该修复的版本后删掉这个分支。
+# 这个分支的价值是补丁，不是跟版本，所以关闭自动升级。
 [[branch]]
 name = "pkg/zellij"
+update = false
