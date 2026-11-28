@@ -15,6 +15,7 @@
   libssh2,
   openssl,
   sqlite,
+  aws-lc,
   wayland,
   writableTmpDirAsHomeHook,
   versionCheckHook,
@@ -25,17 +26,17 @@
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "zellij-unwrapped";
-  version = "0.46.0";
+  version = "0.46.1";
   __structuredAttrs = true;
 
   src = fetchFromGitHub {
     owner = "zellij-org";
     repo = "zellij";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-JpSNWC6jHahirUmnWRZKiVRonFjjIZx9j0V//6t1+iM=";
+    hash = "sha256-sLH3ox4DY6JkrQAaI8IxnA7or1458gF4nEKBuPuQPI8=";
   };
 
-  cargoHash = "sha256-i3Vh7w9YeGUkGIsbqA2UIiLtMqsSC+/ehdSDIfTckM8=";
+  cargoHash = "sha256-qkXg4Vt+x3r1zka5htPtlO28B6bh+oiKGsinCdBASFA=";
 
   # Omit vendored_curl to link against libcurl from nixpkgs.
   buildNoDefaultFeatures = true;
@@ -44,6 +45,16 @@ rustPlatform.buildRustPackage (finalAttrs: {
   ]
   ++ lib.optional withTerminal "terminal"
   ++ lib.optional withWebServer "web_server_capability";
+
+  # The scene renderer treated a cursor cell as one column, so a block cursor on a
+  # wide glyph (CJK, emoji, joined groups) covered only half of it. Applied here
+  # rather than through `patches`: nix-update probes `patches` by unpacking the new
+  # source before it updates `cargoHash`, which fails for rustPlatform packages, and
+  # the probe's default patch fuzz can also mistake a patch for one that was merged
+  # upstream and silently drop it. Drop this patch once a release contains the fix.
+  postPatch = ''
+    patch -p1 < ${./wide-cursor.patch}
+  '';
 
   env.LIBSSH2_SYS_USE_PKG_CONFIG = 1;
   env.OPENSSL_NO_VENDOR = 1;
@@ -54,7 +65,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     (lib.getDev curl)
   ];
 
+  # aws-lc-sys is forced onto the system library by the nixpkgs crate
+  # override (AWS_LC_SYS_USE_SYSTEM=1) and does not find it unless it is here.
   buildInputs = [
+    aws-lc
     curl
     libssh2
     openssl
