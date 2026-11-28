@@ -29,6 +29,9 @@
 # 仍然每小时做，integration 依赖分支跟上当前 unstable。手动 workflow_dispatch 忽略
 # 频率。
 #
+# [[branch]] 的 update = false 则完全跳过 nix-update，但同样保留 rebase、求值和
+# 基线冲突处理；这个分支继续进入 integration，手动触发也不会升级它。
+#
 # 升级这一步会重试：nix-update 抓 release feed 只请求一次，一个 502 就能把腿打掉。
 # 网络抖动在重试里消化掉，issue 留给重试也救不回来的失败。
 #
@@ -388,6 +391,7 @@ jobs:
             echo "::error::$BRANCH 不在 branches.toml 里，或文件无法解析"
             exit 1
           fi
+          UPDATE=$(jq -r '.update' <<< "$cfg")
 
           [ -d nixpkgs/.git ] || git init -q nixpkgs
           cd nixpkgs
@@ -680,6 +684,10 @@ jobs:
           fi
           updatable=$(jq -c .updatable <<< "$eval_json")
           echo "updatable: $updatable"
+          if [ "$UPDATE" = "false" ]; then
+            echo "$BRANCH: 自动升级已禁用（update = false），只检查基线"
+            updatable='[]'
+          fi
 
           # 一个分支上的属性不一定各自独立：magpie-cli 是 magpie 在
           # all-packages.nix 里的 `withGui = false` override，两者读同一行

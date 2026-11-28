@@ -3,7 +3,8 @@
 # 分支都会进到系统里那份 nixpkgs。
 #
 # 一个 [[branch]] 表就是一个分支。数组顺序有意义，后面的分支可以依赖前面的。
-# name 是分支名。
+# name 是分支名。update（可选，默认 true）控制是否运行 nix-update：设成 false
+# 后这个分支不自动升级，但仍会 rebase、参与 integration，并照常做基线冲突检查。
 #
 # attrs（可选）补的是 by-name 的路径 diff 看不见的属性，例如 all-packages.nix 里
 # 的同源属性。它是**补充**，不是替代：by-name 里的包照常按目录名自动识别。

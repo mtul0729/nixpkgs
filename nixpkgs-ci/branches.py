@@ -3,7 +3,8 @@
 
 The file is the single source of truth for the branches CI maintains. Keeping
 its one parser here means `ci-check`, `update` and `integrate` cannot drift on
-what a valid entry is.
+what a valid entry is. A branch can set `update = false` to keep its baseline
+and integration participation while skipping `nix-update`.
 """
 
 import argparse
@@ -65,11 +66,11 @@ def validate(path, data):
         if not isinstance(branch, dict):
             raise ConfigError(f"{where} 不是表")
 
-        unknown = set(branch) - {"name", "attrs", "unit"}
+        unknown = set(branch) - {"name", "attrs", "unit", "update"}
         if unknown:
             raise ConfigError(
                 f"{where} 有未知键：{sorted(unknown)}"
-                "（只接受 name/attrs/unit）")
+                "（只接受 name/attrs/unit/update）")
 
         name = branch.get("name")
         if (not isinstance(name, str) or not name
@@ -78,6 +79,10 @@ def validate(path, data):
         if name in seen:
             raise ConfigError(f"分支 {name} 重复出现")
         seen.add(name)
+
+        update = branch.get("update", True)
+        if not isinstance(update, bool):
+            raise ConfigError(f"{name}: update 必须是布尔值")
 
         attrs = branch.get("attrs", [])
         if not isinstance(attrs, list):
@@ -164,6 +169,7 @@ def cmd_plan(args):
 def cmd_show(args):
     branch = find_branch(read(args.file), args.branch)
     print(json.dumps({
+        "update": branch.get("update", True),
         "attrs": branch.get("attrs", []),
         "units": units(branch),
     }))

@@ -115,7 +115,7 @@ Four workflows, each with one job:
 | workflow | trigger | what it does |
 | --- | --- | --- |
 | `ci-check` | push to `master` touching `nixpkgs-ci/**` or `.github/workflows/**` | parses every workflow's YAML, validates `branches.toml`, and checks that each branch exists on the fork |
-| `update` | hourly at `:13`, manual (`only`, `verify_only`) | per branch: `nix-update`, IFD check, build, and only then push the branch |
+| `update` | hourly at `:13`, manual (`only`, `verify_only`) | per branch: `nix-update` (unless disabled), IFD check, build, and only then push the branch |
 | `integrate` | after `update` finishes, manual | squash every branch onto current `nixos-unstable`, build the attributes the branches carry, then push `integration` |
 | `build-branch` | manual (`branch`, `attrs`, `push_to_cache`) | build one branch's attributes without listing it in `branches.toml` — for evaluating a PR or trying a patch |
 
@@ -137,7 +137,7 @@ a commit that has not been built:
    step is retried three times, ten seconds apart, resetting to the pre-update tree between
    attempts because a failed run may already have rewritten `package.nix`. Only this step
    is retried — the build below is deterministic, and retrying it would burn CI time and
-   hide a real failure;
+   hide a real failure. A branch with `update = false` skips this step;
 3. re-evaluate every attribute the branch carries and treat the ones whose `drvPath`
    changed, plus the one that was updated, as a single unit. Two names can read the same
    definition: `magpie-cli` is `magpie.override { withGui = false; }`, and
@@ -195,6 +195,20 @@ because `integrate` merges the branches and a branch that stopped following its
 baseline would be skipped there. A skipped or failed slot is retried at the next one,
 not on the next hourly run, so `daily` can leave a package a day behind -- which is the
 point of setting it.
+
+A branch whose purpose is a patch rather than tracking releases can turn the updater off
+entirely:
+
+```toml
+[[branch]]
+name = "pkg/zellij"
+update = false
+```
+
+This skips `nix-update` for every run, including a manual `workflow_dispatch`, but still
+rebases the branch, evaluates it and resolves baseline conflicts. The branch stays in
+`branches.toml` and `integration`; `verify_only` remains the way to rebuild it without
+updating. Remove the line temporarily if a deliberate version bump is needed.
 
 An interval bounds when an update is *started*, not what a unit contains. If an hourly
 unit's `nix-update` rewrites an attribute in a throttled unit, that attribute is still
