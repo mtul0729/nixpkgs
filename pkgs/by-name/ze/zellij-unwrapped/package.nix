@@ -15,6 +15,7 @@
   libssh2,
   openssl,
   sqlite,
+  aws-lc,
   wayland,
   writableTmpDirAsHomeHook,
   versionCheckHook,
@@ -64,7 +65,10 @@ rustPlatform.buildRustPackage (finalAttrs: {
     (lib.getDev curl)
   ];
 
+  # aws-lc-sys is forced onto the system library by the nixpkgs crate
+  # override (AWS_LC_SYS_USE_SYSTEM=1) and does not find it unless it is here.
   buildInputs = [
+    aws-lc
     curl
     libssh2
     openssl
