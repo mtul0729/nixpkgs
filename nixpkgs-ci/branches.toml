@@ -83,3 +83,7 @@ name = "pkg/disktree"
 
 [[branch]]
 name = "pkg/helix-fcitx-focus"
+
+# zellij-unwrapped 带一个宽字符光标补丁；上游发布含该修复的版本后删掉这个分支。
+[[branch]]
+name = "pkg/zellij"
