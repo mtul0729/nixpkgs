@@ -46,9 +46,14 @@ rustPlatform.buildRustPackage (finalAttrs: {
   ++ lib.optional withWebServer "web_server_capability";
 
   # The scene renderer treated a cursor cell as one column, so a block cursor on a
-  # wide glyph (CJK, emoji, joined groups) covered only half of it. Drop this patch
-  # once a zellij release contains the fix.
-  patches = [ ./wide-cursor.patch ];
+  # wide glyph (CJK, emoji, joined groups) covered only half of it. Applied here
+  # rather than through `patches`: nix-update probes `patches` by unpacking the new
+  # source before it updates `cargoHash`, which fails for rustPlatform packages, and
+  # the probe's default patch fuzz can also mistake a patch for one that was merged
+  # upstream and silently drop it. Drop this patch once a release contains the fix.
+  postPatch = ''
+    patch -p1 < ${./wide-cursor.patch}
+  '';
 
   env.LIBSSH2_SYS_USE_PKG_CONFIG = 1;
   env.OPENSSL_NO_VENDOR = 1;
