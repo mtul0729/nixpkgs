@@ -45,6 +45,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
   ++ lib.optional withTerminal "terminal"
   ++ lib.optional withWebServer "web_server_capability";
 
+  # The scene renderer treated a cursor cell as one column, so a block cursor on a
+  # wide glyph (CJK, emoji, joined groups) covered only half of it. Drop this patch
+  # once a zellij release contains the fix.
+  patches = [ ./wide-cursor.patch ];
+
   env.LIBSSH2_SYS_USE_PKG_CONFIG = 1;
   env.OPENSSL_NO_VENDOR = 1;
 
