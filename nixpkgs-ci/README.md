@@ -88,9 +88,15 @@ derivation comparison and not a directory scan.
 | `pkg/sherpa-onnx` | humans + update bot | nixpkgs' `sherpa-onnx` at 2.0.3, plus an `update.sh` that regenerates the CMake FetchContent archive list that `nix-update` cannot edit. The version bump is upstream PR #594460; the script follows as its own PR |
 | `pkg/noop` | humans + update bot | Desktop client for running a team of AI coding agents; built from source with the NSH toolchain (`longbridge/nsh`) at the commit upstream's release workflow pins |
 
-Package-specific investigations live in `nixpkgs-ci/notes/`. The SiYuan packaging
-constraints and past failures are recorded in [`notes/siyuan.md`](notes/siyuan.md), the
-sherpa-onnx branch and its upstream PRs in [`notes/sherpa-onnx.md`](notes/sherpa-onnx.md).
+Work on a package starts in `nixpkgs-ci/notes/`, one file per line. Each note is that
+line's entry point: what the branch carries, what was already tried, and what the next
+step is.
+
+| note | read it when |
+| --- | --- |
+| [`notes/sherpa-onnx.md`](notes/sherpa-onnx.md) | touching `pkg/sherpa-onnx`, its upstream PRs, or the CMake FetchContent archive list |
+| [`notes/siyuan.md`](notes/siyuan.md) | touching `pkg/siyuan`, the desktop/server split, or the OCR assets |
+| [`notes/audacious-gtk.md`](notes/audacious-gtk.md) | picking the GTK backend work back up |
 
 `pkg/helix` is deliberately additive. nixpkgs' `steelix` reuses
 `helix.defaultGrammarsOverlay`, and it also builds on `helix-unwrapped`. Changing

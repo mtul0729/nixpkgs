@@ -5,6 +5,19 @@
 没有 reviewer）；fork 侧的 `pkg/sherpa-onnx` 带着同一份内容，另外多一个自动更新脚本，
 等 PR 合入后再单独提。
 
+## 恢复这条线
+
+先读 `AGENTS.md` 和 `nixpkgs-ci/README.md`，然后从这里把工作树接上：
+
+```bash
+git fetch origin pkg/sherpa-onnx
+git worktree add /tmp/ws-sherpa origin/pkg/sherpa-onnx   # 已有就跳过
+gh pr view 594460 -R NixOS/nixpkgs --json state,mergeable,reviewDecision
+```
+
+PR 合入前只维护 `pkg/sherpa-onnx`；合入后按下面的“下一步”收线。`pkg/*` 只喂 CI，
+不是 PR 分支。
+
 ## 东西在哪
 
 | 用途 | 位置 |
