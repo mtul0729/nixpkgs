@@ -5,3 +5,4 @@
 [resmon] +80s 00:42:25 mem=1838/15701MB swap=0/19455MB load=1.63 0.78 0.32 top=445MB:nix-daemon,223MB:nix-build,203MB:Runner.Worker root=63G free, 57% used build=
 [resmon] +91s 00:42:36 mem=1839/15701MB swap=0/19455MB load=1.53 0.79 0.33 top=466MB:nix-build,203MB:Runner.Worker,96MB:Runner.Listener root=64G free, 57% used build=
 [resmon] +103s 00:42:48 mem=1960/15701MB swap=0/19455MB load=2.79 1.08 0.43 top=466MB:nix-build,203MB:Runner.Worker,98MB:Runner.Listener root=62G free, 58% used build=magpie-cli> source root is source
+[resmon] +114s 00:42:59 mem=2227/15701MB swap=0/19455MB load=5.45 1.75 0.66 top=466MB:nix-build,203MB:Runner.Worker,146MB:cachix root=62G free, 58% used build=magpie-cli> Building subPackage ./.

@@ -1,8 +1,3 @@
-magpie-cli> go: downloading github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec
-magpie-cli> go: downloading github.com/opencontainers/go-digest v1.0.0
-magpie-cli> go: downloading github.com/go-openapi/swag/typeutils v0.25.4
-magpie-cli> go: downloading google.golang.org/genproto/googleapis/rpc v0.0.0-20251103181224-f26f9409b101
-magpie-cli> go: downloading github.com/go-openapi/swag/cmdutils v0.25.4
 magpie-cli> go: downloading github.com/go-openapi/swag/jsonname v0.25.4
 magpie-cli> go: downloading github.com/go-openapi/swag/loading v0.25.4
 magpie-cli> go: downloading github.com/go-openapi/swag/mangling v0.25.4
@@ -28,3 +23,8 @@ magpie-cli> Using versionCheckHook
 magpie-cli> Running phase: unpackPhase
 magpie-cli> unpacking source archive /nix/store/67hry7jwvp907m2p2k28gfkarsw3shjm-source
 magpie-cli> source root is source
+magpie-cli> Running phase: patchPhase
+magpie-cli> Running phase: updateAutotoolsGnuConfigScriptsPhase
+magpie-cli> Running phase: configurePhase
+magpie-cli> Running phase: buildPhase
+magpie-cli> Building subPackage ./.
