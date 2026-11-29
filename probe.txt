@@ -1,0 +1,1 @@
+[resmon] +12s 00:40:58 mem=1420/15982MB swap=0/19455MB load=3.10 1.09 0.39 top=371MB:git,199MB:Runner.Worker,95MB:Runner.Listener root=65G free, 56% used build=
